@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Novo Ativo{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h4 class="card-title mb-3">Novo ativo</h4>
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Nome do ativo *</label>
+                        <input type="text" name="name" class="form-control" placeholder="Ex: Servidor-Web-01" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tipo</label>
+                        <select name="asset_type" class="form-select">
+                            <option>Servidor</option>
+                            <option>Workstation</option>
+                            <option>Dispositivo de rede</option>
+                            <option>Aplicação Web</option>
+                            <option>Banco de dados</option>
+                            <option>Outro</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Endereço IP</label>
+                        <input type="text" name="ip_address" class="form-control" placeholder="Ex: 10.0.0.15">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Responsável</label>
+                        <input type="text" name="owner" class="form-control" placeholder="Ex: Equipe de Infraestrutura">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <a href="{{ url_for('assets') }}" class="btn btn-outline-secondary">Cancelar</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
