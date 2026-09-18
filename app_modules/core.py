@@ -50,6 +50,8 @@ def init_db():
             ip_address TEXT,
             asset_type TEXT NOT NULL DEFAULT 'Servidor',
             owner TEXT,
+            criticality TEXT NOT NULL DEFAULT 'Média',
+            internet_exposed INTEGER NOT NULL DEFAULT 0,
             created_by INTEGER NOT NULL,
             created_at TEXT NOT NULL,
             FOREIGN KEY (created_by) REFERENCES users (id)
@@ -63,6 +65,8 @@ def init_db():
             description TEXT,
             cvss_score REAL NOT NULL DEFAULT 0,
             severity TEXT NOT NULL,
+            risk_score REAL NOT NULL DEFAULT 0,
+            risk_level TEXT NOT NULL DEFAULT 'Baixo',
             status TEXT NOT NULL DEFAULT 'Aberta',
             discovered_date TEXT NOT NULL,
             resolved_date TEXT,
@@ -72,6 +76,36 @@ def init_db():
             FOREIGN KEY (created_by) REFERENCES users (id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            resource_type TEXT NOT NULL,
+            resource_id INTEGER,
+            old_value TEXT,
+            new_value TEXT,
+            ip_address TEXT,
+            user_agent TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
+        )
+    """)
+    asset_columns = {row["name"] for row in conn.execute("PRAGMA table_info(assets)").fetchall()}
+    vuln_columns = {row["name"] for row in conn.execute("PRAGMA table_info(vulnerabilities)").fetchall()}
+    if "criticality" not in asset_columns:
+        conn.execute("ALTER TABLE assets ADD COLUMN criticality TEXT NOT NULL DEFAULT 'Média'")
+    if "internet_exposed" not in asset_columns:
+        conn.execute("ALTER TABLE assets ADD COLUMN internet_exposed INTEGER NOT NULL DEFAULT 0")
+    if "risk_score" not in vuln_columns:
+        conn.execute("ALTER TABLE vulnerabilities ADD COLUMN risk_score REAL NOT NULL DEFAULT 0")
+    if "risk_level" not in vuln_columns:
+        conn.execute("ALTER TABLE vulnerabilities ADD COLUMN risk_level TEXT NOT NULL DEFAULT 'Baixo'")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_asset ON vulnerabilities(asset_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_status ON vulnerabilities(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_severity ON vulnerabilities(severity)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cvss ON vulnerabilities(cvss_score)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)")
     conn.commit()
     conn.close()
 
