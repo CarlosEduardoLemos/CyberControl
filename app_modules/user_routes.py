@@ -12,7 +12,6 @@ def register_user_routes():
         all_users = conn.execute(
             "SELECT id, username, role FROM users ORDER BY username"
         ).fetchall()
-        conn.close()
         return render_template("users.html", users=all_users)
 
     @app.route("/users/<int:user_id>/role", methods=["POST"])
@@ -29,13 +28,11 @@ def register_user_routes():
         conn = get_db()
         old_user = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
         if not old_user:
-            conn.close()
             flash("Usuário não encontrado.", "danger")
             return redirect(url_for("users"))
         old_role = old_user["role"]
         conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
         conn.commit()
-        conn.close()
         record_audit("USER_ROLE_CHANGED", "user", user_id, old_value=old_role, new_value=new_role)
         flash("Perfil atualizado.", "success")
         return redirect(url_for("users"))

@@ -29,4 +29,3 @@ def record_audit(action, resource_type, resource_id=None, old_value=None, new_va
         ),
     )
     conn.commit()
-    conn.close()

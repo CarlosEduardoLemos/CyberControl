@@ -14,12 +14,11 @@ def _fetch_live_vulnerabilities():
     errors = []
     sources = [
         ("CISA KEV", "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"),
-        ("NVD", "https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=5"),
+        ("NVD", "https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=20"),
     ]
     for source_name, source_url in sources:
         try:
-            req = urllib.request.Request(source_url, headers={"User-Agent": "CyberControl/1.0"})
-            # source_url vem exclusivamente da lista de endpoints HTTPS definidos no código.
+            req = urllib.request.Request(source_url, headers={"User-Agent": "CyberControl/1.1"})
             with urllib.request.urlopen(req, timeout=15) as response:  # nosec B310
                 payload = json.loads(response.read().decode("utf-8"))
 
@@ -43,7 +42,9 @@ def _fetch_live_vulnerabilities():
                     cve_id = cve.get("id") or ""
                     descriptions = cve.get("descriptions", []) or []
                     english = next((d for d in descriptions if d.get("lang") == "en"), None)
-                    description = (english or (descriptions[0] if descriptions else {})).get("value", "Descrição não informada.")
+                    description = (english or (descriptions[0] if descriptions else {})).get(
+                        "value", "Descrição não informada."
+                    )
                     metrics = cve.get("metrics", {}) or {}
                     cvss = None
                     for key in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30"):
@@ -54,7 +55,12 @@ def _fetch_live_vulnerabilities():
                     severity = "Alta"
                     if cvss is not None:
                         score = float(cvss)
-                        severity = "Nenhuma" if score == 0 else "Baixa" if score < 4 else "Média" if score < 7 else "Alta" if score < 9 else "Crítica"
+                        severity = (
+                            "Nenhuma" if score == 0 else
+                            "Baixa" if score < 4 else
+                            "Média" if score < 7 else
+                            "Alta" if score < 9 else "Crítica"
+                        )
                     records.append({
                         "id": cve_id,
                         "title": cve_id or "Vulnerabilidade recente",
@@ -62,6 +68,7 @@ def _fetch_live_vulnerabilities():
                         "source": source_name,
                         "severity": severity,
                         "cvss": cvss,
+                        "kev": False,
                         "link": f"https://nvd.nist.gov/vuln/detail/{cve_id}" if cve_id else "#",
                     })
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
@@ -70,12 +77,31 @@ def _fetch_live_vulnerabilities():
     unique_records = []
     seen_ids = set()
     for item in records:
-        if item["id"] and item["id"] in seen_ids:
+        key = (item.get("source"), item.get("id"))
+        if item.get("id") and key in seen_ids:
             continue
         unique_records.append(item)
-        if item["id"]:
-            seen_ids.add(item["id"])
+        if item.get("id"):
+            seen_ids.add(key)
     return unique_records, "; ".join(errors) if errors else None
+
+
+def _filtered_records(limit=8, search_term="", source_filter="", severity_filter=""):
+    records = list(LIVE_VULNS_CACHE)
+    if search_term:
+        term = search_term.strip().lower()
+        records = [
+            item for item in records
+            if term in (item.get("title") or "").lower()
+            or term in (item.get("description") or "").lower()
+            or term in (item.get("source") or "").lower()
+            or term in (item.get("id") or "").lower()
+        ]
+    if source_filter:
+        records = [item for item in records if (item.get("source") or "").lower() == source_filter.lower()]
+    if severity_filter:
+        records = filter_live_vulnerabilities(records, severity_filter=severity_filter)
+    return records[:limit]
 
 
 def refresh_live_vulnerabilities(force=False, limit=8, search_term="", source_filter="", severity_filter=""):
@@ -86,16 +112,28 @@ def refresh_live_vulnerabilities(force=False, limit=8, search_term="", source_fi
     if force or not cache_is_fresh:
         LIVE_VULNS_CACHE, LIVE_VULNS_ERROR = _fetch_live_vulnerabilities()
         LIVE_VULNS_FETCHED_AT = datetime.now()
+    return _filtered_records(limit, search_term, source_filter, severity_filter), LIVE_VULNS_ERROR
 
-    records = list(LIVE_VULNS_CACHE)
-    if search_term:
-        term = search_term.strip().lower()
-        records = [item for item in records if term in (item.get("title") or "").lower() or term in (item.get("description") or "").lower() or term in (item.get("source") or "").lower()]
-    if source_filter:
-        records = [item for item in records if (item.get("source") or "").lower() == source_filter.lower()]
-    if severity_filter:
-        records = filter_live_vulnerabilities(records, severity_filter=severity_filter)
-    return records[:limit], LIVE_VULNS_ERROR
+
+def cached_live_vulnerabilities(limit=8, search_term="", source_filter="", severity_filter=""):
+    """Retorna apenas cache; nunca faz I/O de rede no caminho crítico do dashboard."""
+    return _filtered_records(limit, search_term, source_filter, severity_filter), LIVE_VULNS_ERROR
+
+
+def known_kev_ids():
+    return {
+        (item.get("id") or "").upper()
+        for item in LIVE_VULNS_CACHE
+        if item.get("source") == "CISA KEV" and item.get("id")
+    }
+
+
+def cache_metadata():
+    return {
+        "fetched_at": LIVE_VULNS_FETCHED_AT,
+        "has_data": bool(LIVE_VULNS_CACHE),
+        "error": LIVE_VULNS_ERROR,
+    }
 
 
 def filter_live_vulnerabilities(items, severity_filter=""):

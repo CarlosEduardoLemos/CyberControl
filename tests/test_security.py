@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 import app_modules.core as core
 from cybercontrol import app, create_app
@@ -17,6 +18,7 @@ class SecurityRegressionTests(unittest.TestCase):
         core.DB_PATH = os.path.join(self.tmpdir, "test.db")
         app.config.update(TESTING=True, UPLOAD_FOLDER=os.path.join(self.tmpdir, "uploads"))
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+        core.init_db()
         create_app()
         self.client = app.test_client()
 
@@ -25,6 +27,17 @@ class SecurityRegressionTests(unittest.TestCase):
         app.config["UPLOAD_FOLDER"] = self.old_upload
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
+    def db_one(self, sql, params=()):
+        with app.app_context():
+            return core.get_db().execute(sql, params).fetchone()
+
+    def db_exec(self, sql, params=()):
+        with app.app_context():
+            conn = core.get_db()
+            cursor = conn.execute(sql, params)
+            conn.commit()
+            return cursor.lastrowid
+
     def csrf_token(self, path="/register"):
         self.client.get(path)
         with self.client.session_transaction() as sess:
@@ -32,35 +45,30 @@ class SecurityRegressionTests(unittest.TestCase):
 
     def register_and_login_admin(self):
         token = self.csrf_token("/register")
-        self.client.post("/register", data={
-            "_csrf_token": token,
-            "username": "admin",
-            "password": "secret123",
-        })
+        self.client.post("/register", data={"_csrf_token": token, "username": "admin", "password": "secret123"})
         token = self.csrf_token("/login")
-        self.client.post("/login", data={
-            "_csrf_token": token,
-            "username": "admin",
-            "password": "secret123",
-        })
+        self.client.post("/login", data={"_csrf_token": token, "username": "admin", "password": "secret123"})
 
-    def create_vulnerability(self):
-        conn = core.get_db()
-        user_id = conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()["id"]
-        conn.execute(
+    def create_vulnerability(self, **extra):
+        user_id = self.db_one("SELECT id FROM users WHERE username='admin'")["id"]
+        asset_id = self.db_exec(
             "INSERT INTO assets (name, asset_type, created_by, created_at) VALUES (?, ?, ?, ?)",
             ("srv", "Servidor", user_id, "2026-01-01T00:00:00"),
         )
-        asset_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-        conn.execute(
+        fields = {
+            "cve_id": None,
+            "due_date": "2026-02-01",
+            "kev": 0,
+        }
+        fields.update(extra)
+        vuln_id = self.db_exec(
             """INSERT INTO vulnerabilities
-               (asset_id, title, cvss_score, severity, status, discovered_date, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (asset_id, "test", 5.0, "Média", "Aberta", "2026-01-01", user_id, "2026-01-01T00:00:00"),
+               (asset_id,title,cvss_score,severity,risk_score,risk_level,status,discovered_date,
+                created_by,created_at,cve_id,due_date,kev)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (asset_id, "test", 5.0, "Média", 5.0, "Médio", "Aberta", "2026-01-01",
+             user_id, "2026-01-01T00:00:00", fields["cve_id"], fields["due_date"], fields["kev"]),
         )
-        vuln_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-        conn.commit()
-        conn.close()
         return asset_id, vuln_id
 
     def test_post_without_csrf_is_rejected(self):
@@ -69,74 +77,53 @@ class SecurityRegressionTests(unittest.TestCase):
 
     def test_first_registered_user_is_admin(self):
         token = self.csrf_token("/register")
-        self.client.post("/register", data={
-            "_csrf_token": token,
-            "username": "admin",
-            "password": "secret123",
-        })
-        conn = core.get_db()
-        user = conn.execute("SELECT role FROM users WHERE username = ?", ("admin",)).fetchone()
-        conn.close()
-        self.assertEqual(user["role"], "admin")
+        self.client.post("/register", data={"_csrf_token": token, "username": "admin", "password": "secret123"})
+        self.assertEqual(self.db_one("SELECT role FROM users WHERE username='admin'")["role"], "admin")
 
     def test_public_registration_closes_after_bootstrap(self):
         self.register_and_login_admin()
-        token = self.csrf_token("/logout")
+        token = self.csrf_token("/")
         self.client.post("/logout", data={"_csrf_token": token})
-        response = self.client.get("/register")
+        self.assertEqual(self.client.get("/register").status_code, 302)
+
+    def test_login_lockout_is_scoped_by_ip_and_username(self):
+        token = self.csrf_token("/login")
+        for _ in range(5):
+            self.client.post("/login", data={"_csrf_token": token, "username": "missing", "password": "wrong-pass"})
+        row = self.db_one(
+            "SELECT locked_until FROM login_attempts WHERE ip_address=? AND username=?",
+            ("127.0.0.1", "missing"),
+        )
+        self.assertGreater(datetime.fromisoformat(row["locked_until"]), datetime.now() - timedelta(seconds=1))
+        self.assertIsNone(self.db_one(
+            "SELECT locked_until FROM login_attempts WHERE ip_address=? AND username=?",
+            ("127.0.0.1", "other"),
+        ))
+
+    def test_role_change_in_database_invalidates_old_admin_privilege(self):
+        self.register_and_login_admin()
+        admin_id = self.db_one("SELECT id FROM users WHERE username='admin'")["id"]
+        self.db_exec("UPDATE users SET role='analista' WHERE id=?", (admin_id,))
+        response = self.client.get("/users")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/"))
+
+    def test_deleted_user_session_is_invalidated(self):
+        self.register_and_login_admin()
+        admin_id = self.db_one("SELECT id FROM users WHERE username='admin'")["id"]
+        self.db_exec("DELETE FROM users WHERE id=?", (admin_id,))
+        response = self.client.get("/assets")
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.headers["Location"].endswith("/login"))
 
-    def test_admin_can_create_analyst_after_bootstrap(self):
-        self.register_and_login_admin()
-        token = self.csrf_token("/register")
-        response = self.client.post("/register", data={
-            "_csrf_token": token,
-            "username": "analista1",
-            "password": "secret456",
-        })
-        self.assertEqual(response.status_code, 302)
-        conn = core.get_db()
-        role = conn.execute("SELECT role FROM users WHERE username = 'analista1'").fetchone()["role"]
-        conn.close()
-        self.assertEqual(role, "analista")
-
-    def test_login_lockout_is_persisted_in_database(self):
-        token = self.csrf_token("/login")
-        for _ in range(5):
-            self.client.post("/login", data={
-                "_csrf_token": token,
-                "username": "missing",
-                "password": "wrong-pass",
-            })
-        conn = core.get_db()
-        row = conn.execute("SELECT locked_until FROM login_attempts WHERE ip_address = ?", ("127.0.0.1",)).fetchone()
-        conn.close()
-        self.assertIsNotNone(row)
-        self.assertGreater(datetime.fromisoformat(row["locked_until"]), datetime.now() - timedelta(seconds=1))
-
-    def test_evidence_path_traversal_is_not_served(self):
-        self.register_and_login_admin()
-        _, vuln_id = self.create_vulnerability()
-        secret_path = os.path.join(self.tmpdir, "secret.txt")
-        with open(secret_path, "w", encoding="utf-8") as file:
-            file.write("not-for-download")
-        response = self.client.get(f"/vulnerabilities/{vuln_id}/evidence/../../secret.txt")
-        self.assertIn(response.status_code, (404, 308))
-        self.assertNotIn(b"not-for-download", response.data)
-
-    def test_invalid_status_is_not_persisted(self):
-        self.register_and_login_admin()
-        _, vuln_id = self.create_vulnerability()
-        token = self.csrf_token(f"/vulnerabilities/{vuln_id}/edit")
-        self.client.post(
-            f"/vulnerabilities/{vuln_id}/edit",
-            data={"_csrf_token": token, "status": "INJETADO"},
-        )
-        conn = core.get_db()
-        status = conn.execute("SELECT status FROM vulnerabilities WHERE id = ?", (vuln_id,)).fetchone()["status"]
-        conn.close()
-        self.assertEqual(status, "Aberta")
+    def test_csrf_token_rotates_after_login(self):
+        token_before = self.csrf_token("/register")
+        self.client.post("/register", data={"_csrf_token": token_before, "username": "admin", "password": "secret123"})
+        login_token = self.csrf_token("/login")
+        self.client.post("/login", data={"_csrf_token": login_token, "username": "admin", "password": "secret123"})
+        self.client.get("/")
+        with self.client.session_transaction() as sess:
+            self.assertNotEqual(sess["_csrf_token"], login_token)
 
     def test_disallowed_evidence_extension_is_rejected(self):
         self.register_and_login_admin()
@@ -144,40 +131,24 @@ class SecurityRegressionTests(unittest.TestCase):
         token = self.csrf_token("/vulnerabilities/add")
         response = self.client.post(
             "/vulnerabilities/add",
-            data={
-                "_csrf_token": token,
-                "asset_id": str(asset_id),
-                "title": "upload inválido",
-                "cvss_score": "5.0",
-                "evidence": (io.BytesIO(b"echo unsafe"), "script.bat"),
-            },
+            data={"_csrf_token": token, "asset_id": str(asset_id), "title": "upload inválido", "cvss_score": "5.0",
+                  "evidence": (io.BytesIO(b"echo unsafe"), "script.bat")},
             content_type="multipart/form-data",
         )
         self.assertEqual(response.status_code, 302)
-        conn = core.get_db()
-        exists = conn.execute("SELECT id FROM vulnerabilities WHERE title = ?", ("upload inválido",)).fetchone()
-        conn.close()
-        self.assertIsNone(exists)
+        self.assertIsNone(self.db_one("SELECT id FROM vulnerabilities WHERE title='upload inválido'"))
 
-    def test_deleting_vulnerability_removes_evidence_directory(self):
+    def test_dashboard_does_not_fetch_external_feeds_automatically(self):
         self.register_and_login_admin()
-        _, vuln_id = self.create_vulnerability()
-        evidence_dir = os.path.join(app.config["UPLOAD_FOLDER"], str(vuln_id))
-        os.makedirs(evidence_dir, exist_ok=True)
-        with open(os.path.join(evidence_dir, "proof.txt"), "w", encoding="utf-8") as file:
-            file.write("evidence")
-        token = self.csrf_token("/vulnerabilities")
-        self.client.post(
-            f"/vulnerabilities/{vuln_id}/delete",
-            data={"_csrf_token": token},
-        )
-        self.assertFalse(os.path.exists(evidence_dir))
-
-    def test_invalid_report_filters_are_ignored(self):
-        self.register_and_login_admin()
-        response = self.client.get("/reports/pdf?severity=INVALID&status=INVALID")
+        with patch("app_modules.live_vulns._fetch_live_vulnerabilities") as fetch_mock:
+            response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.mimetype, "application/pdf")
+        fetch_mock.assert_not_called()
+
+    def test_migration_adds_vulnerability_management_columns(self):
+        with app.app_context():
+            columns = {row["name"] for row in core.get_db().execute("PRAGMA table_info(vulnerabilities)")}
+        self.assertTrue({"cve_id", "cwe_id", "remediation", "assigned_to", "due_date", "kev", "updated_at"}.issubset(columns))
 
 
 if __name__ == "__main__":

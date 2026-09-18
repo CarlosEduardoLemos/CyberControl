@@ -7,10 +7,12 @@ Aplicação web server-rendered em Flask para cadastro de ativos, registro e pri
 - Bootstrap seguro: somente o primeiro usuário pode se cadastrar publicamente e se torna `admin`.
 - Após o bootstrap, novas contas são criadas somente por administradores e entram como `analista`.
 - Login com senha armazenada por hash do Werkzeug.
-- Rate limiting de login persistente em SQLite.
-- Gestão de ativos e vulnerabilidades.
+- Rate limiting de login persistente em SQLite por combinação de IP + usuário, com limpeza de registros antigos.
+- Gestão de ativos e vulnerabilidades com CVE, CWE, origem, responsável, remediação e prazo.
 - Score CVSS, severidade e score de risco contextual.
-- Dashboard com filtros e dados públicos de CISA KEV/NVD.
+- Dashboard operacional com KPIs, SLA, MTTR, backlog, ativos mais expostos e evolução temporal.
+- Threat Intelligence CISA KEV/NVD com cache explícito, sem chamadas externas no caminho crítico do dashboard.
+- Sincronização CVE local ↔ CISA KEV com recálculo do risco contextual.
 - Upload protegido de evidências com limite de 10 MB e lista de extensões permitidas.
 - Download autenticado de evidências com proteção contra path traversal.
 - Exclusão de vulnerabilidades/ativos com limpeza das evidências associadas.
@@ -154,9 +156,42 @@ A inicialização do banco é idempotente e ocorre também ao importar a aplica�
 
 ## Rate limiting de login
 
-As tentativas inválidas são persistidas na tabela `login_attempts` do SQLite. Após 5 falhas pelo mesmo endereço remoto, o login é bloqueado por 5 minutos. A contagem deixa de depender da memória do processo e continua válida após reinicializações.
+As tentativas inválidas são persistidas na tabela `login_attempts` do SQLite por combinação de endereço remoto e usuário normalizado. Após 5 falhas para a mesma combinação, o login é bloqueado por 5 minutos. Registros antigos são limpos automaticamente após 30 dias. A contagem deixa de depender da memória do processo e continua válida após reinicializações.
 
 Se a aplicação ficar atrás de reverse proxy, configure corretamente o middleware de proxy da infraestrutura antes de utilizar cabeçalhos encaminhados como origem do cliente. O código não confia diretamente em `X-Forwarded-For` para a decisão de bloqueio.
+
+
+## Gestão de vulnerabilidades e SLA
+
+Cada vulnerabilidade pode registrar:
+
+- CVE e CWE;
+- origem do achado;
+- responsável pela remediação;
+- ação de remediação;
+- data de descoberta e prazo;
+- indicação CISA KEV;
+- score de risco contextual.
+
+Quando o prazo não é informado, o CyberControl aplica a política padrão:
+
+| Severidade | SLA padrão |
+|---|---:|
+| Crítica | 7 dias |
+| Alta | 15 dias |
+| Média | 30 dias |
+| Baixa | 60 dias |
+| Nenhuma | 90 dias |
+
+Os registros são classificados como `Dentro do SLA`, `Próximo do vencimento`, `Vencido` ou `Resolvida`.
+
+## Threat Intelligence
+
+O dashboard não realiza chamadas de rede automaticamente durante a renderização. Os feeds CISA KEV/NVD são atualizados de forma explícita pelo botão **Atualizar CISA/NVD**. Após a atualização, vulnerabilidades locais com CVE presente no catálogo CISA KEV são marcadas e têm o risco recalculado.
+
+## Migrations
+
+O banco possui a tabela `schema_migrations` e migrations idempotentes executadas em `init_db()`. Elas preservam bancos de versões anteriores e adicionam os novos campos de gestão de vulnerabilidades e a chave composta do rate limiting sem exigir recriação manual do banco.
 
 ## Upload de evidências
 

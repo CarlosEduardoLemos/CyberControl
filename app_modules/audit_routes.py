@@ -15,5 +15,4 @@ def register_audit_routes():
             ORDER BY l.created_at DESC
             LIMIT 200
         """).fetchall()
-        conn.close()
         return render_template("audit.html", logs=logs)

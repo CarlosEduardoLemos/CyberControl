@@ -6,6 +6,7 @@ from flask import flash, redirect, render_template, request, session, url_for
 
 from app_modules.audit import record_audit
 from app_modules.core import admin_required, app, get_db, login_required
+from app_modules.sla import sla_status
 
 VALID_CRITICALITIES = frozenset({"Baixa", "Média", "Alta", "Crítica"})
 
@@ -21,7 +22,6 @@ def register_asset_routes():
             FROM assets a
             ORDER BY a.created_at DESC
         """).fetchall()
-        conn.close()
         return render_template("assets.html", assets=all_assets)
 
     @app.route("/assets/add", methods=["GET", "POST"])
@@ -49,7 +49,6 @@ def register_asset_routes():
             """, (name, ip_address, asset_type, owner, criticality, internet_exposed, session["user_id"], datetime.now().isoformat()))
             conn.commit()
             asset_id = cursor.lastrowid
-            conn.close()
             record_audit("ASSET_CREATED", "asset", asset_id, new_value=f"criticality={criticality};internet_exposed={internet_exposed}")
             flash("Ativo cadastrado com sucesso.", "success")
             return redirect(url_for("assets"))
@@ -62,14 +61,17 @@ def register_asset_routes():
         conn = get_db()
         asset = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
         if not asset:
-            conn.close()
             flash("Ativo não encontrado.", "danger")
             return redirect(url_for("assets"))
-        vulns = conn.execute(
-            "SELECT * FROM vulnerabilities WHERE asset_id = ? ORDER BY cvss_score DESC",
+        rows = conn.execute(
+            "SELECT * FROM vulnerabilities WHERE asset_id = ? ORDER BY risk_score DESC, cvss_score DESC",
             (asset_id,),
         ).fetchall()
-        conn.close()
+        vulns = []
+        for row in rows:
+            item = dict(row)
+            item["sla_status"] = sla_status(item.get("due_date"), item.get("status"))
+            vulns.append(item)
         return render_template("asset_detail.html", asset=asset, vulns=vulns)
 
     @app.route("/assets/<int:asset_id>/delete", methods=["POST"])
@@ -78,7 +80,6 @@ def register_asset_routes():
         conn = get_db()
         asset = conn.execute("SELECT name FROM assets WHERE id = ?", (asset_id,)).fetchone()
         if not asset:
-            conn.close()
             flash("Ativo não encontrado.", "warning")
             return redirect(url_for("assets"))
         vuln_ids = [row["id"] for row in conn.execute(
@@ -86,7 +87,6 @@ def register_asset_routes():
         ).fetchall()]
         conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
         conn.commit()
-        conn.close()
 
         for vuln_id in vuln_ids:
             shutil.rmtree(os.path.join(app.config["UPLOAD_FOLDER"], str(vuln_id)), ignore_errors=True)

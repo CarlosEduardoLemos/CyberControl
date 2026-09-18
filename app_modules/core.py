@@ -4,7 +4,7 @@ import secrets
 import sqlite3
 from functools import wraps
 
-from flask import Flask, abort, flash, redirect, request, session, url_for
+from flask import Flask, abort, flash, g, redirect, request, session, url_for
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
@@ -41,98 +41,192 @@ app.config.update(
 DB_PATH = os.environ.get("DATABASE_PATH") or os.path.join(BASE_DIR, "database.db")
 
 
-def get_db():
+def _connect_db():
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 10000")
     return conn
 
 
-def init_db():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'analista'
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS assets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            ip_address TEXT,
-            asset_type TEXT NOT NULL DEFAULT 'Servidor',
-            owner TEXT,
-            criticality TEXT NOT NULL DEFAULT 'Média',
-            internet_exposed INTEGER NOT NULL DEFAULT 0,
-            created_by INTEGER NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (created_by) REFERENCES users (id)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS vulnerabilities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            asset_id INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            description TEXT,
-            cvss_score REAL NOT NULL DEFAULT 0,
-            severity TEXT NOT NULL,
-            risk_score REAL NOT NULL DEFAULT 0,
-            risk_level TEXT NOT NULL DEFAULT 'Baixo',
-            status TEXT NOT NULL DEFAULT 'Aberta',
-            discovered_date TEXT NOT NULL,
-            resolved_date TEXT,
-            created_by INTEGER NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE,
-            FOREIGN KEY (created_by) REFERENCES users (id)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            action TEXT NOT NULL,
-            resource_type TEXT NOT NULL,
-            resource_id INTEGER,
-            old_value TEXT,
-            new_value TEXT,
-            ip_address TEXT,
-            user_agent TEXT,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS login_attempts (
-            ip_address TEXT PRIMARY KEY,
-            attempt_count INTEGER NOT NULL DEFAULT 0,
-            locked_until TEXT,
-            updated_at TEXT NOT NULL
-        )
-    """)
+def get_db():
+    """Retorna uma conexão por contexto Flask e evita abre/fecha repetitivo nas rotas."""
+    if "db" not in g:
+        g.db = _connect_db()
+    return g.db
 
-    asset_columns = {row["name"] for row in conn.execute("PRAGMA table_info(assets)").fetchall()}
-    vuln_columns = {row["name"] for row in conn.execute("PRAGMA table_info(vulnerabilities)").fetchall()}
-    if "criticality" not in asset_columns:
-        conn.execute("ALTER TABLE assets ADD COLUMN criticality TEXT NOT NULL DEFAULT 'Média'")
-    if "internet_exposed" not in asset_columns:
-        conn.execute("ALTER TABLE assets ADD COLUMN internet_exposed INTEGER NOT NULL DEFAULT 0")
-    if "risk_score" not in vuln_columns:
-        conn.execute("ALTER TABLE vulnerabilities ADD COLUMN risk_score REAL NOT NULL DEFAULT 0")
-    if "risk_level" not in vuln_columns:
-        conn.execute("ALTER TABLE vulnerabilities ADD COLUMN risk_level TEXT NOT NULL DEFAULT 'Baixo'")
+
+@app.teardown_appcontext
+def close_db(_error=None):
+    conn = g.pop("db", None)
+    if conn is not None:
+        conn.close()
+
+
+def _columns(conn, table):
+    return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _migration_applied(conn, version):
+    row = conn.execute("SELECT 1 FROM schema_migrations WHERE version = ?", (version,)).fetchone()
+    return row is not None
+
+
+def _mark_migration(conn, version, name):
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, datetime('now'))",
+        (version, name),
+    )
+
+
+def _apply_migrations(conn):
+    """Migrations idempotentes para preservar bancos criados por versões anteriores."""
+    if not _migration_applied(conn, 1):
+        asset_columns = _columns(conn, "assets")
+        vuln_columns = _columns(conn, "vulnerabilities")
+        if "criticality" not in asset_columns:
+            conn.execute("ALTER TABLE assets ADD COLUMN criticality TEXT NOT NULL DEFAULT 'Média'")
+        if "internet_exposed" not in asset_columns:
+            conn.execute("ALTER TABLE assets ADD COLUMN internet_exposed INTEGER NOT NULL DEFAULT 0")
+        if "risk_score" not in vuln_columns:
+            conn.execute("ALTER TABLE vulnerabilities ADD COLUMN risk_score REAL NOT NULL DEFAULT 0")
+        if "risk_level" not in vuln_columns:
+            conn.execute("ALTER TABLE vulnerabilities ADD COLUMN risk_level TEXT NOT NULL DEFAULT 'Baixo'")
+        _mark_migration(conn, 1, "legacy_security_fields")
+
+    if not _migration_applied(conn, 2):
+        vuln_columns = _columns(conn, "vulnerabilities")
+        additions = {
+            "cve_id": "TEXT",
+            "cwe_id": "TEXT",
+            "source": "TEXT NOT NULL DEFAULT 'Manual'",
+            "remediation": "TEXT",
+            "assigned_to": "TEXT",
+            "due_date": "TEXT",
+            "updated_at": "TEXT",
+            "kev": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for column, ddl in additions.items():
+            if column not in vuln_columns:
+                conn.execute(f"ALTER TABLE vulnerabilities ADD COLUMN {column} {ddl}")
+        _mark_migration(conn, 2, "vulnerability_management_fields")
+
+    if not _migration_applied(conn, 3):
+        info = conn.execute("PRAGMA table_info(login_attempts)").fetchall()
+        has_username = any(row["name"] == "username" for row in info)
+        if not has_username:
+            conn.execute("ALTER TABLE login_attempts RENAME TO login_attempts_legacy")
+            conn.execute("""
+                CREATE TABLE login_attempts (
+                    ip_address TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    locked_until TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (ip_address, username)
+                )
+            """)
+            conn.execute("DROP TABLE login_attempts_legacy")
+        _mark_migration(conn, 3, "login_attempts_per_account")
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_asset ON vulnerabilities(asset_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_status ON vulnerabilities(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_severity ON vulnerabilities(severity)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cvss ON vulnerabilities(cvss_score)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_due_date ON vulnerabilities(due_date)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cve ON vulnerabilities(cve_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_kev ON vulnerabilities(kev)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)")
-    conn.commit()
-    conn.close()
+
+
+def init_db():
+    conn = _connect_db()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'analista'
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                ip_address TEXT,
+                asset_type TEXT NOT NULL DEFAULT 'Servidor',
+                owner TEXT,
+                criticality TEXT NOT NULL DEFAULT 'Média',
+                internet_exposed INTEGER NOT NULL DEFAULT 0,
+                created_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (created_by) REFERENCES users (id)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vulnerabilities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                cvss_score REAL NOT NULL DEFAULT 0,
+                severity TEXT NOT NULL,
+                risk_score REAL NOT NULL DEFAULT 0,
+                risk_level TEXT NOT NULL DEFAULT 'Baixo',
+                status TEXT NOT NULL DEFAULT 'Aberta',
+                discovered_date TEXT NOT NULL,
+                resolved_date TEXT,
+                created_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                cve_id TEXT,
+                cwe_id TEXT,
+                source TEXT NOT NULL DEFAULT 'Manual',
+                remediation TEXT,
+                assigned_to TEXT,
+                due_date TEXT,
+                updated_at TEXT,
+                kev INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by) REFERENCES users (id)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                action TEXT NOT NULL,
+                resource_type TEXT NOT NULL,
+                resource_id INTEGER,
+                old_value TEXT,
+                new_value TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                ip_address TEXT NOT NULL,
+                username TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                locked_until TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (ip_address, username)
+            )
+        """)
+        _apply_migrations(conn)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def cvss_to_severity(score):
@@ -156,11 +250,7 @@ SEVERITY_BADGE = {
     "Baixa": "bg-info text-dark",
     "Nenhuma": "bg-secondary",
 }
-STATUS_BADGE = {
-    "Aberta": "bg-danger",
-    "Em andamento": "bg-warning text-dark",
-    "Resolvida": "bg-success",
-}
+STATUS_BADGE = {"Aberta": "bg-danger", "Em andamento": "bg-warning text-dark", "Resolvida": "bg-success"}
 VALID_SEVERITIES = frozenset(SEVERITY_BADGE)
 VALID_STATUSES = frozenset(STATUS_BADGE)
 VALID_ROLES = frozenset({"admin", "analista"})
@@ -180,10 +270,27 @@ app.jinja_env.globals["csrf_token"] = get_csrf_token
 
 
 @app.before_request
+def load_current_user():
+    g.current_user = None
+    user_id = session.get("user_id")
+    if not user_id:
+        return
+    user = get_db().execute(
+        "SELECT id, username, role FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    if not user:
+        session.clear()
+        return
+    g.current_user = user
+    # A sessão mantém apenas conveniência de UI; o banco é a fonte de verdade.
+    session["username"] = user["username"]
+    session["role"] = user["role"]
+
+
+@app.before_request
 def csrf_protect():
     if request.method != "POST":
         return
-
     expected = session.get("_csrf_token")
     supplied = request.form.get("_csrf_token", "")
     if not expected or not supplied or not hmac.compare_digest(expected, supplied):
@@ -193,23 +300,21 @@ def csrf_protect():
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if "user_id" not in session:
+        if g.current_user is None:
             flash("Faça login para continuar.", "warning")
             return redirect(url_for("login"))
         return f(*args, **kwargs)
-
     return decorated
 
 
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if "user_id" not in session:
+        if g.current_user is None:
             flash("Faça login para continuar.", "warning")
             return redirect(url_for("login"))
-        if session.get("role") != "admin":
+        if g.current_user["role"] != "admin":
             flash("Apenas administradores podem acessar essa área.", "danger")
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
-
     return decorated
