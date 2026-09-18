@@ -23,7 +23,20 @@ jobs:
       - name: Compile
         run: python -m compileall -q .
       - name: Ruff
-        run: ruff check .
+        run: |
+          set +e
+          ruff check . --output-format=json > ruff-results.json
+          status=$?
+          echo "RUFF_STATUS=$status" >> "$GITHUB_ENV"
+          exit 0
+      - name: Upload Ruff diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-diagnostics-${{ matrix.python-version }}
+          path: ruff-results.json
+      - name: Fail if Ruff failed
+        run: exit "$RUFF_STATUS"
 
       - name: Tests
         env:
