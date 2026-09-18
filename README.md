@@ -37,13 +37,18 @@ O projeto é voltado a demonstração e estudo de um fluxo de gestão de vulnera
 CyberControl/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml
+│       ├── ci.yml
+│       ├── security.yml
+│       └── codeql.yml
 ├── app_modules/
 │   ├── auth_routes.py
 │   ├── asset_routes.py
 │   ├── core.py
 │   ├── dashboard_routes.py
 │   ├── live_vulns.py
+│   ├── audit.py
+│   ├── audit_routes.py
+│   ├── risk.py
 │   ├── user_routes.py
 │   └── vuln_routes.py
 ├── templates/
