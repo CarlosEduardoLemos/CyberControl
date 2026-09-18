@@ -1,1 +1,1 @@
-from .core import app
+"""Módulos da aplicação CyberControl."""
