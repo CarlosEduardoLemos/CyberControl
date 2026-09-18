@@ -2,6 +2,7 @@ import os
 
 from app_modules.auth_routes import register_auth_routes
 from app_modules.asset_routes import register_asset_routes
+from app_modules.audit_routes import register_audit_routes
 from app_modules.core import app, init_db
 from app_modules.dashboard_routes import register_dashboard_routes
 from app_modules.live_vulns import refresh_live_vulnerabilities
@@ -18,6 +19,7 @@ def create_app():
     register_asset_routes()
     register_vuln_routes()
     register_user_routes()
+    register_audit_routes()
     app._routes_registered = True
     return app
 
