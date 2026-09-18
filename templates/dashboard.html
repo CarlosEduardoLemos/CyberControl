@@ -1,67 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}Dashboard | CyberControl{% endblock %}
 {% block content %}
 <h3 class="mb-4">Dashboard</h3>
-<div class="row mb-4">
-{% for label, value, extra in [
-('Ativos cadastrados', total_assets, ''),
-('Vulnerabilidades', total_vulns, ''),
-('Críticas + Altas', severity_counts.get('Crítica', 0) + severity_counts.get('Alta', 0), 'border-danger'),
-('Resolvidas', status_counts.get('Resolvida', 0), 'border-success')
-] %}
-<div class="col-md-3 mb-3"><div class="card shadow-sm text-center {{ extra }}"><div class="card-body">
-<h6 class="text-muted">{{ label }}</h6><h2>{{ value }}</h2></div></div></div>
-{% endfor %}
-</div>
-<div class="row mb-4">
-<div class="col-md-6"><div class="card shadow-sm"><div class="card-body"><h5 class="card-title">Por severidade</h5>
-{% for sev in ['Crítica', 'Alta', 'Média', 'Baixa'] %}<div class="d-flex justify-content-between align-items-center mb-2">
-<span class="badge {{ SEVERITY_BADGE[sev] }}">{{ sev }}</span><span>{{ severity_counts.get(sev, 0) }}</span></div>{% endfor %}
-</div></div></div>
-<div class="col-md-6"><div class="card shadow-sm"><div class="card-body"><h5 class="card-title">Por status</h5>
-{% for st in ['Aberta', 'Em andamento', 'Resolvida'] %}<div class="d-flex justify-content-between align-items-center mb-2">
-<span class="badge {{ STATUS_BADGE[st] }}">{{ st }}</span><span>{{ status_counts.get(st, 0) }}</span></div>{% endfor %}
-</div></div></div>
-</div>
-<div class="card shadow-sm mb-4"><div class="card-body">
-<div class="d-flex justify-content-between align-items-center mb-3"><h5 class="card-title mb-0">Vulnerabilidades públicas recentes</h5>
-<small class="text-muted">{{ live_vulns_error or 'Atualizado automaticamente' }}</small></div>
-<form method="GET" class="row g-2 mb-3">
-<div class="col-md-4"><input type="text" name="search_term" class="form-control" placeholder="Buscar por produto, tecnologia ou palavra-chave" value="{{ search_term }}"></div>
-<div class="col-md-3"><select name="source_filter" class="form-select"><option value="">Todas as fontes</option>
-<option value="CISA KEV" {% if source_filter == 'CISA KEV' %}selected{% endif %}>CISA KEV</option>
-<option value="NVD" {% if source_filter == 'NVD' %}selected{% endif %}>NVD</option></select></div>
-<div class="col-md-3"><select name="severity_filter" class="form-select"><option value="">Todas as severidades</option>
-{% for sev in ['Alta','Crítica','Média','Baixa'] %}<option value="{{ sev }}" {% if severity_filter == sev %}selected{% endif %}>{{ sev }}</option>{% endfor %}
-</select></div><div class="col-md-2"><button type="submit" class="btn btn-primary w-100">Buscar</button></div></form>
-<div class="row g-3 mb-4">
-<div class="col-md-4"><div class="border rounded p-3 h-100 bg-dark text-white"><div class="text-white-50 small">Total filtrado</div><div class="fs-4 fw-bold">{{ live_vulns_summary.total }}</div></div></div>
-<div class="col-md-4"><div class="border rounded p-3 h-100"><div class="text-muted small">Por fonte</div>
-{% for source, count in live_vulns_summary.by_source.items() %}<div class="d-flex justify-content-between mt-2"><span>{{ source }}</span><span class="fw-bold">{{ count }}</span></div>{% endfor %}</div></div>
-<div class="col-md-4"><div class="border rounded p-3 h-100"><div class="text-muted small">Por severidade</div>
-{% for severity, count in live_vulns_summary.by_severity.items() %}<div class="d-flex justify-content-between mt-2"><span><span class="badge {{ SEVERITY_BADGE.get(severity, 'bg-secondary') }} me-2">{{ severity }}</span></span><span class="fw-bold">{{ count }}</span></div>{% endfor %}</div></div>
-</div>
-{% if live_vulns %}<ul class="list-group list-group-flush">{% for item in live_vulns %}
-<li class="list-group-item px-0"><a href="{{ item['link'] }}" target="_blank" rel="noopener noreferrer" class="text-decoration-none text-dark">
-<div class="d-flex justify-content-between align-items-start gap-3"><div><div class="fw-bold">{{ item['title'] }}</div>
-<div class="small text-muted">{{ item['description'] }}</div><div class="small text-muted mt-1">Fonte: {{ item['source'] }} • {{ item['id'] }}</div></div>
-<span class="badge {{ SEVERITY_BADGE.get(item['severity'], 'bg-secondary') }}">{{ item['severity'] }}</span></div></a></li>{% endfor %}</ul>
-{% else %}<p class="text-muted">Não foi possível buscar vulnerabilidades públicas no momento.</p>{% endif %}
+<div class="row mb-4">{% for label, value, extra in [('Ativos cadastrados', total_assets, ''),('Vulnerabilidades', total_vulns, ''),('Críticas + Altas', severity_counts.get('Crítica', 0) + severity_counts.get('Alta', 0), 'border-danger'),('Resolvidas', status_counts.get('Resolvida', 0), 'border-success')] %}<div class="col-sm-6 col-lg-3 mb-3"><div class="card shadow-sm text-center {{ extra }}"><div class="card-body"><h6 class="text-muted">{{ label }}</h6><h2>{{ value }}</h2></div></div></div>{% endfor %}</div>
+<div class="row mb-4"><div class="col-md-6 mb-3 mb-md-0"><div class="card shadow-sm h-100"><div class="card-body"><h5 class="card-title">Por severidade</h5>{% for sev in ['Crítica', 'Alta', 'Média', 'Baixa'] %}<div class="d-flex justify-content-between align-items-center mb-2"><span class="badge {{ SEVERITY_BADGE[sev] }}">{{ sev }}</span><span>{{ severity_counts.get(sev, 0) }}</span></div>{% endfor %}</div></div></div><div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body"><h5 class="card-title">Por status</h5>{% for st in ['Aberta', 'Em andamento', 'Resolvida'] %}<div class="d-flex justify-content-between align-items-center mb-2"><span class="badge {{ STATUS_BADGE[st] }}">{{ st }}</span><span>{{ status_counts.get(st, 0) }}</span></div>{% endfor %}</div></div></div></div>
+<div class="card shadow-sm mb-4"><div class="card-body"><div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3"><h5 class="card-title mb-0">Vulnerabilidades públicas recentes</h5><small class="text-muted">{{ live_vulns_error or 'Atualizado automaticamente' }}</small></div>
+<form method="GET" class="row g-2 mb-3"><div class="col-12 col-md-4"><label class="visually-hidden" for="search_term">Buscar</label><input id="search_term" type="text" name="search_term" class="form-control" placeholder="Buscar por produto, tecnologia ou palavra-chave" value="{{ search_term }}"></div><div class="col-12 col-md-3"><label class="visually-hidden" for="source_filter">Fonte</label><select id="source_filter" name="source_filter" class="form-select"><option value="">Todas as fontes</option><option value="CISA KEV" {% if source_filter == 'CISA KEV' %}selected{% endif %}>CISA KEV</option><option value="NVD" {% if source_filter == 'NVD' %}selected{% endif %}>NVD</option></select></div><div class="col-12 col-md-3"><label class="visually-hidden" for="severity_filter">Severidade</label><select id="severity_filter" name="severity_filter" class="form-select"><option value="">Todas as severidades</option>{% for sev in ['Alta','Crítica','Média','Baixa'] %}<option value="{{ sev }}" {% if severity_filter == sev %}selected{% endif %}>{{ sev }}</option>{% endfor %}</select></div><div class="col-12 col-md-2"><button type="submit" class="btn btn-primary w-100">Buscar</button></div></form>
+<div class="row g-3 mb-4"><div class="col-md-4"><div class="border rounded p-3 h-100 bg-dark text-white"><div class="text-white-50 small">Total filtrado</div><div class="fs-4 fw-bold">{{ live_vulns_summary.total }}</div></div></div><div class="col-md-4"><div class="border rounded p-3 h-100"><div class="text-muted small">Por fonte</div>{% for source, count in live_vulns_summary.by_source.items() %}<div class="d-flex justify-content-between mt-2"><span>{{ source }}</span><span class="fw-bold">{{ count }}</span></div>{% endfor %}</div></div><div class="col-md-4"><div class="border rounded p-3 h-100"><div class="text-muted small">Por severidade</div>{% for severity, count in live_vulns_summary.by_severity.items() %}<div class="d-flex justify-content-between mt-2"><span><span class="badge {{ SEVERITY_BADGE.get(severity, 'bg-secondary') }} me-2">{{ severity }}</span></span><span class="fw-bold">{{ count }}</span></div>{% endfor %}</div></div></div>
+{% if live_vulns %}<ul class="list-group list-group-flush">{% for item in live_vulns %}<li class="list-group-item px-0"><a href="{{ item['link'] }}" target="_blank" rel="noopener noreferrer" class="text-decoration-none text-dark"><div class="d-flex justify-content-between align-items-start gap-3"><div><div class="fw-bold">{{ item['title'] }}</div><div class="small text-muted">{{ item['description'] }}</div><div class="small text-muted mt-1">Fonte: {{ item['source'] }} • {{ item['id'] }}</div></div><span class="badge {{ SEVERITY_BADGE.get(item['severity'], 'bg-secondary') }}">{{ item['severity'] }}</span></div></a></li>{% endfor %}</ul>{% else %}<p class="text-muted">Não foi possível buscar vulnerabilidades públicas no momento.</p>{% endif %}
 </div></div>
-<div class="card shadow-sm mb-4"><div class="card-body"><h5 class="card-title mb-3">Sites oficiais e confiáveis para acompanhar vulnerabilidades</h5>
-<ul class="mb-0"><li><a href="https://nvd.nist.gov/vuln/search" target="_blank" rel="noopener noreferrer">NVD — National Vulnerability Database</a></li>
-<li><a href="https://www.cve.org" target="_blank" rel="noopener noreferrer">CVE.org — registros CVE</a></li>
-<li><a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank" rel="noopener noreferrer">CISA KEV — vulnerabilidades conhecidamente exploradas</a></li>
-<li><a href="https://www.cisa.gov/news-events/cybersecurity-advisories" target="_blank" rel="noopener noreferrer">CISA Advisories</a></li>
-<li><a href="https://vulners.com" target="_blank" rel="noopener noreferrer">Vulners</a></li>
-<li><a href="https://github.com/advisories" target="_blank" rel="noopener noreferrer">GitHub Security Advisories</a></li>
-<li><a href="https://www.cert.br" target="_blank" rel="noopener noreferrer">CERT.br</a></li></ul></div></div>
-<div class="card shadow-sm"><div class="card-body"><div class="d-flex justify-content-between align-items-center mb-3">
-<h5 class="card-title mb-0">Últimas vulnerabilidades registradas</h5><a href="{{ url_for('report_pdf') }}" class="btn btn-outline-secondary btn-sm">📄 Exportar relatório PDF</a></div>
-{% if not recent_vulns %}<p class="text-muted">Nenhuma vulnerabilidade registrada ainda.</p>{% else %}
-<table class="table table-hover align-middle"><thead><tr><th>Ativo</th><th>Vulnerabilidade</th><th>CVSS</th><th>Severidade</th><th>Status</th></tr></thead><tbody>
-{% for v in recent_vulns %}<tr><td>{{ v['asset_name'] }}</td><td>{{ v['title'] }}</td><td>{{ '%.1f' % v['cvss_score'] }}</td>
-<td><span class="badge {{ SEVERITY_BADGE[v['severity']] }}">{{ v['severity'] }}</span></td>
-<td><span class="badge {{ STATUS_BADGE[v['status']] }}">{{ v['status'] }}</span></td></tr>{% endfor %}
-</tbody></table>{% endif %}</div></div>
+<div class="card shadow-sm mb-4"><div class="card-body"><h5 class="card-title mb-3">Sites oficiais e confiáveis para acompanhar vulnerabilidades</h5><ul class="mb-0"><li><a href="https://nvd.nist.gov/vuln/search" target="_blank" rel="noopener noreferrer">NVD — National Vulnerability Database</a></li><li><a href="https://www.cve.org" target="_blank" rel="noopener noreferrer">CVE.org — registros CVE</a></li><li><a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank" rel="noopener noreferrer">CISA KEV — vulnerabilidades conhecidamente exploradas</a></li><li><a href="https://www.cisa.gov/news-events/cybersecurity-advisories" target="_blank" rel="noopener noreferrer">CISA Advisories</a></li><li><a href="https://vulners.com" target="_blank" rel="noopener noreferrer">Vulners</a></li><li><a href="https://github.com/advisories" target="_blank" rel="noopener noreferrer">GitHub Security Advisories</a></li><li><a href="https://www.cert.br" target="_blank" rel="noopener noreferrer">CERT.br</a></li></ul></div></div>
+<div class="card shadow-sm"><div class="card-body"><div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-3"><h5 class="card-title mb-0">Últimas vulnerabilidades registradas</h5><a href="{{ url_for('report_pdf') }}" class="btn btn-outline-secondary btn-sm">📄 Exportar relatório PDF</a></div>{% if not recent_vulns %}<p class="text-muted">Nenhuma vulnerabilidade registrada ainda.</p>{% else %}<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Ativo</th><th>Vulnerabilidade</th><th>CVSS</th><th>Severidade</th><th>Status</th></tr></thead><tbody>{% for v in recent_vulns %}<tr><td>{{ v['asset_name'] }}</td><td>{{ v['title'] }}</td><td>{{ '%.1f' % v['cvss_score'] }}</td><td><span class="badge {{ SEVERITY_BADGE[v['severity']] }}">{{ v['severity'] }}</span></td><td><span class="badge {{ STATUS_BADGE[v['status']] }}">{{ v['status'] }}</span></td></tr>{% endfor %}</tbody></table></div>{% endif %}</div></div>
 {% endblock %}

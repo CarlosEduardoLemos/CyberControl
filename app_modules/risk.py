@@ -15,7 +15,6 @@ def calculate_risk_score(cvss_score, asset_criticality="Média", internet_expose
         score += 0.8
     if kev:
         score += 1.5
-
     return round(min(score, 10.0), 1)
 
 

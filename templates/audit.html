@@ -1,32 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Auditoria{% endblock %}
+{% block title %}Auditoria | CyberControl{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h3 class="mb-0">Auditoria de segurança</h3>
-    <span class="text-muted small">Últimos 200 eventos</span>
-</div>
-<div class="card shadow-sm">
-<div class="card-body">
-<div class="table-responsive">
-<table class="table table-hover align-middle">
-<thead><tr><th>Data</th><th>Usuário</th><th>Ação</th><th>Recurso</th><th>ID</th><th>Detalhes</th><th>IP</th></tr></thead>
-<tbody>
-{% for log in logs %}
-<tr>
-<td>{{ log['created_at'] }}</td>
-<td>{{ log['username'] or 'Sistema/Anônimo' }}</td>
-<td><code>{{ log['action'] }}</code></td>
-<td>{{ log['resource_type'] }}</td>
-<td>{{ log['resource_id'] or '-' }}</td>
-<td class="small">{{ log['old_value'] or '' }}{% if log['new_value'] %} → {{ log['new_value'] }}{% endif %}</td>
-<td>{{ log['ip_address'] or '-' }}</td>
-</tr>
-{% else %}
-<tr><td colspan="7" class="text-muted text-center">Nenhum evento registrado.</td></tr>
-{% endfor %}
-</tbody>
-</table>
-</div>
-</div>
-</div>
+<div class="d-flex justify-content-between align-items-center mb-3"><h3 class="mb-0">Auditoria de segurança</h3><span class="text-muted small">Últimos 200 eventos</span></div>
+<div class="card shadow-sm"><div class="card-body"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Data</th><th>Usuário</th><th>Ação</th><th>Recurso</th><th>ID</th><th>Detalhes</th><th>IP</th></tr></thead><tbody>{% for log in logs %}<tr><td>{{ log['created_at'] }}</td><td>{{ log['username'] or 'Sistema/Anônimo' }}</td><td><code>{{ log['action'] }}</code></td><td>{{ log['resource_type'] }}</td><td>{{ log['resource_id'] or '-' }}</td><td class="small">{{ log['old_value'] or '' }}{% if log['new_value'] %} → {{ log['new_value'] }}{% endif %}</td><td>{{ log['ip_address'] or '-' }}</td></tr>{% else %}<tr><td colspan="7" class="text-muted text-center">Nenhum evento registrado.</td></tr>{% endfor %}</tbody></table></div></div></div>
 {% endblock %}

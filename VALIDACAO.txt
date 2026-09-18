@@ -1,0 +1,22 @@
+CyberControl — validação da cópia auditada
+Data: 2026-09-18
+Base: main @ e5ef4264a59195cd20316d129363c19ef799c436
+
+EXECUTADO NESTE AMBIENTE
+- python -m compileall -q . : PASSOU
+- Parsing AST de todos os arquivos Python : PASSOU (16 arquivos)
+- Verificação de strings/documentação obsoletas relevantes : PASSOU
+- Limpeza de __pycache__ antes do empacotamento : CONCLUÍDA
+
+NÃO EXECUTADO LOCALMENTE
+- python -m unittest discover -v tests
+- ruff check .
+- bandit -r app_modules cybercontrol.py -ll
+- pip-audit -r requirements.txt
+
+Motivo: o runtime desta sessão não possui Flask/Werkzeug/Ruff/Bandit instalados e não possui acesso de rede ao PyPI. ReportLab e coverage estão disponíveis, mas a suíte depende de Flask/Werkzeug.
+
+O repositório contém workflows do GitHub Actions configurados para executar testes, coverage, Ruff, Bandit, pip-audit e CodeQL em ambiente com as dependências instaladas.
+
+IMPORTANTE
+Nenhuma afirmação de teste funcional aprovado foi feita sem execução. A validação sintática foi efetivamente executada e passou.

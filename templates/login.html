@@ -1,35 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Login{% endblock %}
+{% block title %}Login | CyberControl{% endblock %}
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-5">
-        <div class="text-center mb-4">
-            <h2>🛡️ VulnManager</h2>
-            <p class="text-muted">Sistema de Gestão de Vulnerabilidades</p>
-        </div>
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h4 class="card-title mb-3">Entrar</h4>
-                <form method="POST">
-                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                    <div class="mb-3">
-                        <label class="form-label">Usuário</label>
-                        <input type="text" name="username" class="form-control" required autofocus>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Senha</label>
-                        <input type="password" name="password" class="form-control" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">Entrar</button>
-                </form>
-                <p class="mt-3 mb-0 text-center">
-                    Não tem conta? <a href="{{ url_for('register') }}">Cadastre-se</a>
-                </p>
-            </div>
-        </div>
-        <p class="text-center text-muted mt-3 small">
-            O primeiro usuário cadastrado no sistema se torna Administrador automaticamente.
-        </p>
-    </div>
-</div>
+<div class="row justify-content-center"><div class="col-md-5">
+<div class="text-center mb-4"><h2>🛡️ CyberControl</h2><p class="text-muted">Sistema de Gestão de Vulnerabilidades</p></div>
+<div class="card shadow-sm"><div class="card-body"><h4 class="card-title mb-3">Entrar</h4>
+<form method="POST">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+<div class="mb-3"><label class="form-label" for="username">Usuário</label><input id="username" type="text" name="username" class="form-control" autocomplete="username" required autofocus></div>
+<div class="mb-3"><label class="form-label" for="password">Senha</label><input id="password" type="password" name="password" class="form-control" autocomplete="current-password" required></div>
+<button type="submit" class="btn btn-primary w-100">Entrar</button></form>
+{% if registration_open %}<p class="mt-3 mb-0 text-center">Primeiro acesso? <a href="{{ url_for('register') }}">Inicializar administrador</a></p>{% endif %}
+</div></div></div></div>
 {% endblock %}

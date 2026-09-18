@@ -10,24 +10,39 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+
+def _env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 app = Flask(
     __name__,
     template_folder=os.path.join(BASE_DIR, "templates"),
     static_folder=os.path.join(BASE_DIR, "static"),
 )
-app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+
+APP_ENV = os.environ.get("APP_ENV", "development").strip().lower()
+_configured_secret = os.environ.get("SECRET_KEY")
+if APP_ENV == "production" and not _configured_secret:
+    raise RuntimeError("SECRET_KEY é obrigatória quando APP_ENV=production.")
+
+app.secret_key = _configured_secret or secrets.token_hex(32)
 app.config.update(
     UPLOAD_FOLDER=UPLOAD_FOLDER,
     MAX_CONTENT_LENGTH=10 * 1024 * 1024,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=_env_bool("SESSION_COOKIE_SECURE", APP_ENV == "production"),
 )
 
-DB_PATH = os.path.join(BASE_DIR, "database.db")
+DB_PATH = os.environ.get("DATABASE_PATH") or os.path.join(BASE_DIR, "database.db")
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -91,6 +106,15 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            ip_address TEXT PRIMARY KEY,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            locked_until TEXT,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
     asset_columns = {row["name"] for row in conn.execute("PRAGMA table_info(assets)").fetchall()}
     vuln_columns = {row["name"] for row in conn.execute("PRAGMA table_info(vulnerabilities)").fetchall()}
     if "criticality" not in asset_columns:
@@ -101,6 +125,7 @@ def init_db():
         conn.execute("ALTER TABLE vulnerabilities ADD COLUMN risk_score REAL NOT NULL DEFAULT 0")
     if "risk_level" not in vuln_columns:
         conn.execute("ALTER TABLE vulnerabilities ADD COLUMN risk_level TEXT NOT NULL DEFAULT 'Baixo'")
+
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_asset ON vulnerabilities(asset_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_status ON vulnerabilities(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vulnerabilities_severity ON vulnerabilities(severity)")
@@ -136,6 +161,7 @@ STATUS_BADGE = {
     "Em andamento": "bg-warning text-dark",
     "Resolvida": "bg-success",
 }
+VALID_SEVERITIES = frozenset(SEVERITY_BADGE)
 VALID_STATUSES = frozenset(STATUS_BADGE)
 VALID_ROLES = frozenset({"admin", "analista"})
 

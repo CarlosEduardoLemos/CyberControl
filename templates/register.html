@@ -1,28 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Cadastro{% endblock %}
+{% block title %}Cadastro | CyberControl{% endblock %}
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-5">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h4 class="card-title mb-3">Criar conta</h4>
-                <form method="POST">
-                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                    <div class="mb-3">
-                        <label class="form-label">Usuário</label>
-                        <input type="text" name="username" class="form-control" required autofocus>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Senha</label>
-                        <input type="password" name="password" class="form-control" required>
-                    </div>
-                    <button type="submit" class="btn btn-success w-100">Cadastrar</button>
-                </form>
-                <p class="mt-3 mb-0 text-center">
-                    Já tem conta? <a href="{{ url_for('login') }}">Fazer login</a>
-                </p>
-            </div>
-        </div>
-    </div>
-</div>
+<div class="row justify-content-center"><div class="col-md-5"><div class="card shadow-sm"><div class="card-body">
+<h4 class="card-title mb-3">{% if bootstrap_open %}Criar administrador inicial{% else %}Criar conta de analista{% endif %}</h4>
+<form method="POST">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+<div class="mb-3"><label class="form-label" for="username">Usuário</label><input id="username" type="text" name="username" class="form-control" maxlength="80" autocomplete="username" required autofocus></div>
+<div class="mb-3"><label class="form-label" for="password">Senha</label><input id="password" type="password" name="password" class="form-control" minlength="8" autocomplete="new-password" required><div class="form-text">Use pelo menos 8 caracteres.</div></div>
+<button type="submit" class="btn btn-success w-100">Cadastrar</button></form>
+{% if bootstrap_open %}<p class="mt-3 mb-0 text-center">Já inicializou o sistema? <a href="{{ url_for('login') }}">Fazer login</a></p>{% endif %}
+</div></div></div></div>
 {% endblock %}

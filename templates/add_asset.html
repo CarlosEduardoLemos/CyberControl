@@ -1,54 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Novo Ativo{% endblock %}
+{% block title %}Novo Ativo | CyberControl{% endblock %}
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h4 class="card-title mb-3">Novo ativo</h4>
-                <form method="POST">
-                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                    <div class="mb-3">
-                        <label class="form-label">Nome do ativo *</label>
-                        <input type="text" name="name" class="form-control" placeholder="Ex: Servidor-Web-01" required autofocus>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Tipo</label>
-                        <select name="asset_type" class="form-select">
-                            <option>Servidor</option>
-                            <option>Workstation</option>
-                            <option>Dispositivo de rede</option>
-                            <option>Aplicação Web</option>
-                            <option>Banco de dados</option>
-                            <option>Outro</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Endereço IP</label>
-                        <input type="text" name="ip_address" class="form-control" placeholder="Ex: 10.0.0.15">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Responsável</label>
-                        <input type="text" name="owner" class="form-control" placeholder="Ex: Equipe de Infraestrutura">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Criticidade do ativo</label>
-                        <select name="criticality" class="form-select">
-                            <option>Baixa</option>
-                            <option selected>Média</option>
-                            <option>Alta</option>
-                            <option>Crítica</option>
-                        </select>
-                    </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="internet_exposed" id="internet_exposed">
-                        <label class="form-check-label" for="internet_exposed">Exposto à Internet</label>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Salvar</button>
-                    <a href="{{ url_for('assets') }}" class="btn btn-outline-secondary">Cancelar</a>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
+<div class="row justify-content-center"><div class="col-md-6"><div class="card shadow-sm"><div class="card-body">
+<h4 class="card-title mb-3">Novo ativo</h4><form method="POST">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+<div class="mb-3"><label class="form-label" for="name">Nome do ativo *</label><input id="name" type="text" name="name" class="form-control" placeholder="Ex: Servidor-Web-01" required autofocus></div>
+<div class="mb-3"><label class="form-label" for="asset_type">Tipo</label><select id="asset_type" name="asset_type" class="form-select"><option>Servidor</option><option>Workstation</option><option>Dispositivo de rede</option><option>Aplicação Web</option><option>Banco de dados</option><option>Outro</option></select></div>
+<div class="mb-3"><label class="form-label" for="ip_address">Endereço IP</label><input id="ip_address" type="text" name="ip_address" class="form-control" placeholder="Ex: 10.0.0.15"></div>
+<div class="mb-3"><label class="form-label" for="owner">Responsável</label><input id="owner" type="text" name="owner" class="form-control" placeholder="Ex: Equipe de Infraestrutura"></div>
+<div class="mb-3"><label class="form-label" for="criticality">Criticidade do ativo</label><select id="criticality" name="criticality" class="form-select"><option>Baixa</option><option selected>Média</option><option>Alta</option><option>Crítica</option></select></div>
+<div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="internet_exposed" id="internet_exposed"><label class="form-check-label" for="internet_exposed">Exposto à Internet</label></div>
+<button type="submit" class="btn btn-primary">Salvar</button> <a href="{{ url_for('assets') }}" class="btn btn-outline-secondary">Cancelar</a>
+</form></div></div></div></div>
 {% endblock %}

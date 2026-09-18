@@ -1,5 +1,6 @@
 import io
 import os
+import shutil
 import uuid
 from datetime import datetime
 
@@ -11,18 +12,40 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from werkzeug.utils import secure_filename
 
-from app_modules.core import VALID_STATUSES, admin_required, app, cvss_to_severity, get_db, login_required
 from app_modules.audit import record_audit
+from app_modules.core import (
+    VALID_SEVERITIES,
+    VALID_STATUSES,
+    admin_required,
+    app,
+    cvss_to_severity,
+    get_db,
+    login_required,
+)
 from app_modules.risk import calculate_risk_score, risk_level
+
+ALLOWED_EVIDENCE_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "pdf", "txt", "log", "csv", "json"})
+
+
+def _allowed_evidence(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EVIDENCE_EXTENSIONS
+
+
+def _validated_filters():
+    severity = request.args.get("severity", "").strip()
+    status = request.args.get("status", "").strip()
+    if severity and severity not in VALID_SEVERITIES:
+        severity = ""
+    if status and status not in VALID_STATUSES:
+        status = ""
+    return severity, status
 
 
 def register_vuln_routes():
     @app.route("/vulnerabilities")
     @login_required
     def vulnerabilities():
-        severity_filter = request.args.get("severity", "")
-        status_filter = request.args.get("status", "")
-
+        severity_filter, status_filter = _validated_filters()
         query = """
             SELECT v.*, a.name AS asset_name
             FROM vulnerabilities v
@@ -41,7 +64,6 @@ def register_vuln_routes():
         conn = get_db()
         vulns = conn.execute(query, params).fetchall()
         conn.close()
-
         return render_template(
             "vulnerabilities.html",
             vulns=vulns,
@@ -68,7 +90,10 @@ def register_vuln_routes():
                 flash("Preencha o ativo e o título da vulnerabilidade.", "danger")
                 return redirect(url_for("add_vulnerability"))
 
-            asset = conn.execute("SELECT id, criticality, internet_exposed FROM assets WHERE id = ?", (asset_id,)).fetchone()
+            asset = conn.execute(
+                "SELECT id, criticality, internet_exposed FROM assets WHERE id = ?",
+                (asset_id,),
+            ).fetchone()
             if not asset:
                 conn.close()
                 flash("Ativo inválido.", "danger")
@@ -76,20 +101,35 @@ def register_vuln_routes():
 
             try:
                 cvss_score = round(float(cvss_score), 1)
-                if not (0 <= cvss_score <= 10):
+                if not 0 <= cvss_score <= 10:
                     raise ValueError
             except (TypeError, ValueError):
                 conn.close()
                 flash("Score CVSS inválido. Use um valor entre 0.0 e 10.0.", "danger")
                 return redirect(url_for("add_vulnerability"))
 
+            original_name = None
+            if evidence_file and evidence_file.filename:
+                original_name = secure_filename(evidence_file.filename)
+                if not original_name or not _allowed_evidence(original_name):
+                    conn.close()
+                    allowed = ", ".join(sorted(ALLOWED_EVIDENCE_EXTENSIONS))
+                    flash(f"Tipo de evidência não permitido. Use: {allowed}.", "danger")
+                    return redirect(url_for("add_vulnerability"))
+
             severity = cvss_to_severity(cvss_score)
-            risk_score = calculate_risk_score(cvss_score, asset["criticality"], bool(asset["internet_exposed"]), False)
+            risk_score = calculate_risk_score(
+                cvss_score,
+                asset["criticality"],
+                bool(asset["internet_exposed"]),
+                False,
+            )
             risk_level_value = risk_level(risk_score)
 
             cursor = conn.execute("""
                 INSERT INTO vulnerabilities
-                    (asset_id, title, description, cvss_score, severity, risk_score, risk_level, status, discovered_date, created_by, created_at)
+                    (asset_id, title, description, cvss_score, severity, risk_score,
+                     risk_level, status, discovered_date, created_by, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'Aberta', ?, ?, ?)
             """, (
                 asset_id,
@@ -104,27 +144,40 @@ def register_vuln_routes():
                 datetime.now().isoformat(),
             ))
             vuln_id = cursor.lastrowid
-            conn.commit()
-            vuln_id = cursor.lastrowid
-            conn.close()
-            record_audit("VULNERABILITY_CREATED", "vulnerability", vuln_id, new_value=f"cvss={cvss_score};risk={risk_score};level={risk_level_value}")
-
-            if evidence_file and evidence_file.filename:
-                original_name = secure_filename(evidence_file.filename)
-                if not original_name:
-                    flash("Nome do arquivo de evidência inválido.", "warning")
-                else:
+            evidence_dir = None
+            try:
+                if original_name:
                     evidence_dir = os.path.join(app.config["UPLOAD_FOLDER"], str(vuln_id))
                     os.makedirs(evidence_dir, exist_ok=True)
                     filename = f"{uuid.uuid4().hex}_{original_name}"
                     evidence_file.save(os.path.join(evidence_dir, filename))
+                conn.commit()
+            except OSError:
+                conn.rollback()
+                if evidence_dir:
+                    shutil.rmtree(evidence_dir, ignore_errors=True)
+                conn.close()
+                flash("Não foi possível salvar a evidência. Nenhum registro foi criado.", "danger")
+                return redirect(url_for("add_vulnerability"))
+            conn.close()
 
+            record_audit(
+                "VULNERABILITY_CREATED",
+                "vulnerability",
+                vuln_id,
+                new_value=f"cvss={cvss_score};risk={risk_score};level={risk_level_value}",
+            )
             flash("Vulnerabilidade registrada com sucesso.", "success")
             return redirect(url_for("vulnerabilities"))
 
         conn.close()
         preselected_asset = request.args.get("asset_id", "")
-        return render_template("add_vulnerability.html", assets=all_assets, preselected_asset=preselected_asset)
+        return render_template(
+            "add_vulnerability.html",
+            assets=all_assets,
+            preselected_asset=preselected_asset,
+            allowed_evidence_extensions=sorted(ALLOWED_EVIDENCE_EXTENSIONS),
+        )
 
     @app.route("/vulnerabilities/<int:vuln_id>/edit", methods=["GET", "POST"])
     @login_required
@@ -151,8 +204,13 @@ def register_vuln_routes():
             )
             conn.commit()
             conn.close()
-            record_audit("VULNERABILITY_STATUS_CHANGED", "vulnerability", vuln_id, old_value=old_status, new_value=status)
-
+            record_audit(
+                "VULNERABILITY_STATUS_CHANGED",
+                "vulnerability",
+                vuln_id,
+                old_value=old_status,
+                new_value=status,
+            )
             flash("Status atualizado.", "success")
             return redirect(url_for("vulnerabilities"))
 
@@ -165,17 +223,27 @@ def register_vuln_routes():
             )
 
         conn.close()
-        return render_template("edit_vulnerability.html", vuln=vuln, evidence_files=evidence_files, vuln_id=vuln_id)
+        return render_template(
+            "edit_vulnerability.html",
+            vuln=vuln,
+            evidence_files=evidence_files,
+            vuln_id=vuln_id,
+        )
 
     @app.route("/vulnerabilities/<int:vuln_id>/delete", methods=["POST"])
     @admin_required
     def delete_vulnerability(vuln_id):
         conn = get_db()
         vuln = conn.execute("SELECT title FROM vulnerabilities WHERE id = ?", (vuln_id,)).fetchone()
+        if not vuln:
+            conn.close()
+            flash("Vulnerabilidade não encontrada.", "warning")
+            return redirect(url_for("vulnerabilities"))
         conn.execute("DELETE FROM vulnerabilities WHERE id = ?", (vuln_id,))
         conn.commit()
         conn.close()
-        record_audit("VULNERABILITY_DELETED", "vulnerability", vuln_id, old_value=f"title={vuln['title']}" if vuln else None)
+        shutil.rmtree(os.path.join(app.config["UPLOAD_FOLDER"], str(vuln_id)), ignore_errors=True)
+        record_audit("VULNERABILITY_DELETED", "vulnerability", vuln_id, old_value=f"title={vuln['title']}")
         flash("Vulnerabilidade removida.", "info")
         return redirect(url_for("vulnerabilities"))
 
@@ -190,16 +258,13 @@ def register_vuln_routes():
         if not vuln_exists:
             flash("Vulnerabilidade não encontrada.", "danger")
             return redirect(url_for("vulnerabilities"))
-
         evidence_dir = os.path.join(app.config["UPLOAD_FOLDER"], str(vuln_id))
         return send_from_directory(evidence_dir, filename, as_attachment=True)
 
     @app.route("/reports/pdf")
     @login_required
     def report_pdf():
-        severity_filter = request.args.get("severity", "")
-        status_filter = request.args.get("status", "")
-
+        severity_filter, status_filter = _validated_filters()
         query = """
             SELECT v.*, a.name AS asset_name, a.ip_address
             FROM vulnerabilities v
@@ -237,8 +302,8 @@ def register_vuln_routes():
         elements.append(Spacer(1, 0.6 * cm))
 
         summary = {}
-        for v in vulns:
-            summary[v["severity"]] = summary.get(v["severity"], 0) + 1
+        for vuln in vulns:
+            summary[vuln["severity"]] = summary.get(vuln["severity"], 0) + 1
         summary_line = "  |  ".join(
             f"{sev}: {summary.get(sev, 0)}" for sev in ["Crítica", "Alta", "Média", "Baixa"]
         )
@@ -247,14 +312,14 @@ def register_vuln_routes():
         elements.append(Spacer(1, 0.6 * cm))
 
         data = [["Ativo", "Vulnerabilidade", "CVSS", "Severidade", "Status", "Descoberta"]]
-        for v in vulns:
+        for vuln in vulns:
             data.append([
-                v["asset_name"],
-                v["title"],
-                f'{v["cvss_score"]:.1f}',
-                v["severity"],
-                v["status"],
-                v["discovered_date"],
+                vuln["asset_name"],
+                vuln["title"],
+                f'{vuln["cvss_score"]:.1f}',
+                vuln["severity"],
+                vuln["status"],
+                vuln["discovered_date"],
             ])
 
         table = Table(
@@ -271,9 +336,7 @@ def register_vuln_routes():
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f2f2")]),
         ]))
         elements.append(table)
-
         doc.build(elements)
         buffer.seek(0)
-
         filename = f"relatorio_vulnerabilidades_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
         return send_file(buffer, as_attachment=True, download_name=filename, mimetype="application/pdf")

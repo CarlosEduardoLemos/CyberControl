@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 database.db
 .env
+.env.*
+!.env.example
 .vscode/
 .idea/
 *.pdf
