@@ -20,7 +20,8 @@ def _fetch_live_vulnerabilities():
     for source_name, source_url in sources:
         try:
             req = urllib.request.Request(source_url, headers={"User-Agent": "CyberControl/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as response:
+            # source_url vem exclusivamente da lista de endpoints HTTPS definidos no código.
+            with urllib.request.urlopen(req, timeout=15) as response:  # nosec B310
                 payload = json.loads(response.read().decode("utf-8"))
 
             if source_name == "CISA KEV":
