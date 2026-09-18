@@ -12,6 +12,8 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from werkzeug.utils import secure_filename
 
 from app_modules.core import VALID_STATUSES, admin_required, app, cvss_to_severity, get_db, login_required
+from app_modules.audit import record_audit
+from app_modules.risk import calculate_risk_score, risk_level
 
 
 def register_vuln_routes():
@@ -66,7 +68,7 @@ def register_vuln_routes():
                 flash("Preencha o ativo e o título da vulnerabilidade.", "danger")
                 return redirect(url_for("add_vulnerability"))
 
-            asset = conn.execute("SELECT id FROM assets WHERE id = ?", (asset_id,)).fetchone()
+            asset = conn.execute("SELECT id, criticality, internet_exposed FROM assets WHERE id = ?", (asset_id,)).fetchone()
             if not asset:
                 conn.close()
                 flash("Ativo inválido.", "danger")
@@ -82,24 +84,30 @@ def register_vuln_routes():
                 return redirect(url_for("add_vulnerability"))
 
             severity = cvss_to_severity(cvss_score)
+            risk_score = calculate_risk_score(cvss_score, asset["criticality"], bool(asset["internet_exposed"]), False)
+            risk_level_value = risk_level(risk_score)
 
             cursor = conn.execute("""
                 INSERT INTO vulnerabilities
-                    (asset_id, title, description, cvss_score, severity, status, discovered_date, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, 'Aberta', ?, ?, ?)
+                    (asset_id, title, description, cvss_score, severity, risk_score, risk_level, status, discovered_date, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'Aberta', ?, ?, ?)
             """, (
                 asset_id,
                 title,
                 description,
                 cvss_score,
                 severity,
+                risk_score,
+                risk_level_value,
                 discovered_date,
                 session["user_id"],
                 datetime.now().isoformat(),
             ))
             vuln_id = cursor.lastrowid
             conn.commit()
+            vuln_id = cursor.lastrowid
             conn.close()
+            record_audit("VULNERABILITY_CREATED", "vulnerability", vuln_id, new_value=f"cvss={cvss_score};risk={risk_score};level={risk_level_value}")
 
             if evidence_file and evidence_file.filename:
                 original_name = secure_filename(evidence_file.filename)
@@ -136,12 +144,14 @@ def register_vuln_routes():
                 return redirect(url_for("edit_vulnerability", vuln_id=vuln_id))
 
             resolved_date = datetime.now().strftime("%Y-%m-%d") if status == "Resolvida" else None
+            old_status = vuln["status"]
             conn.execute(
                 "UPDATE vulnerabilities SET status = ?, resolved_date = ? WHERE id = ?",
                 (status, resolved_date, vuln_id),
             )
             conn.commit()
             conn.close()
+            record_audit("VULNERABILITY_STATUS_CHANGED", "vulnerability", vuln_id, old_value=old_status, new_value=status)
 
             flash("Status atualizado.", "success")
             return redirect(url_for("vulnerabilities"))
@@ -161,9 +171,11 @@ def register_vuln_routes():
     @admin_required
     def delete_vulnerability(vuln_id):
         conn = get_db()
+        vuln = conn.execute("SELECT title FROM vulnerabilities WHERE id = ?", (vuln_id,)).fetchone()
         conn.execute("DELETE FROM vulnerabilities WHERE id = ?", (vuln_id,))
         conn.commit()
         conn.close()
+        record_audit("VULNERABILITY_DELETED", "vulnerability", vuln_id, old_value=f"title={vuln['title']}" if vuln else None)
         flash("Vulnerabilidade removida.", "info")
         return redirect(url_for("vulnerabilities"))
 
