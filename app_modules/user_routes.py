@@ -1,6 +1,7 @@
 from flask import flash, redirect, render_template, request, session, url_for
 
 from app_modules.core import VALID_ROLES, admin_required, app, get_db
+from app_modules.audit import record_audit
 
 
 def register_user_routes():
@@ -33,9 +34,12 @@ def register_user_routes():
             flash("Usuário não encontrado.", "danger")
             return redirect(url_for("users"))
 
+        old_user = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+        old_role = old_user["role"]
         conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
         conn.commit()
         conn.close()
+        record_audit("USER_ROLE_CHANGED", "user", user_id, old_value=old_role, new_value=new_role)
 
         flash("Perfil atualizado.", "success")
         return redirect(url_for("users"))
