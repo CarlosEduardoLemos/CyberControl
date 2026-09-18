@@ -16,6 +16,11 @@ O projeto é voltado a demonstração e estudo de um fluxo de gestão de vulnera
 - Geração de relatório em PDF
 - Proteção CSRF nos formulários
 - Controle de acesso para operações administrativas
+- Registro de auditoria de ações relevantes
+- Rate limiting básico para tentativas de login
+- Score de risco contextual por ativo e vulnerabilidade
+- Integração de severidade CVSS real retornada pelo NVD
+- Enriquecimento CISA KEV com ransomware e due date
 
 ## Tecnologias
 
@@ -146,6 +151,7 @@ O workflow `.github/workflows/ci.yml` executa compilação e testes em Python 3.
 - `users` — usuários
 - `assets` — ativos
 - `vulnerabilities` — vulnerabilidades vinculadas aos ativos
+- `audit_logs` — eventos de auditoria e rastreabilidade
 
 ## Escala de severidade local
 
@@ -156,6 +162,27 @@ O workflow `.github/workflows/ci.yml` executa compilação e testes em Python 3.
 | 4.0 – 6.9 | Média |
 | 7.0 – 8.9 | Alta |
 | 9.0 – 10.0 | Crítica |
+
+## Risco contextual
+
+O CyberControl calcula um score de triagem combinando CVSS, criticidade do ativo, exposição à Internet e indicação de exploração conhecida (CISA KEV). O score é apresentado como apoio à priorização e não substitui uma avaliação formal de risco.
+
+## Segurança no CI
+
+Além dos testes funcionais, o projeto possui workflows separados para:
+- Ruff — lint;
+- Bandit — análise de segurança do código Python;
+- pip-audit — auditoria de dependências;
+- CodeQL — análise estática de segurança.
+
+## Auditoria
+
+Administradores podem consultar os últimos eventos na rota /audit. São registrados, entre outros:
+- criação e alteração de usuários;
+- alterações de perfil;
+- criação e exclusão de ativos;
+- criação, alteração de status e exclusão de vulnerabilidades;
+- logins bem-sucedidos e bloqueios por excesso de tentativas.
 
 ## Limitações
 
