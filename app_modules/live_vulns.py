@@ -43,12 +43,24 @@ def _fetch_live_vulnerabilities():
                     description = (english or (descriptions[0] if descriptions else {})).get(
                         "value", "Descrição não informada."
                     )
+                    metrics = cve.get("metrics", {}) or {}
+                    cvss = None
+                    for key in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30"):
+                        entries = metrics.get(key) or []
+                        if entries:
+                            cvss = entries[0].get("cvssData", {}).get("baseScore")
+                            break
+                    severity = "Alta"
+                    if cvss is not None:
+                        score = float(cvss)
+                        severity = "Nenhuma" if score == 0 else "Baixa" if score < 4 else "Média" if score < 7 else "Alta" if score < 9 else "Crítica"
                     records.append({
                         "id": cve_id,
                         "title": cve_id or "Vulnerabilidade recente",
                         "description": description,
                         "source": source_name,
-                        "severity": "Alta",
+                        "severity": severity,
+                        "cvss": cvss,
                         "link": f"https://nvd.nist.gov/vuln/detail/{cve_id}" if cve_id else "#",
                     })
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
