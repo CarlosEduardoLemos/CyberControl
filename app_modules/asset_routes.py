@@ -3,6 +3,7 @@ from datetime import datetime
 from flask import flash, redirect, render_template, request, session, url_for
 
 from app_modules.core import admin_required, app, get_db, login_required
+from app_modules.audit import record_audit
 
 
 def register_asset_routes():
@@ -27,6 +28,11 @@ def register_asset_routes():
             ip_address = request.form.get("ip_address", "").strip()
             asset_type = request.form.get("asset_type", "Servidor").strip()
             owner = request.form.get("owner", "").strip()
+            criticality = request.form.get("criticality", "Média").strip()
+            internet_exposed = 1 if request.form.get("internet_exposed") else 0
+            if criticality not in {"Baixa", "Média", "Alta", "Crítica"}:
+                flash("Criticidade inválida.", "danger")
+                return redirect(url_for("add_asset"))
 
             if not name:
                 flash("O nome do ativo é obrigatório.", "danger")
@@ -34,11 +40,14 @@ def register_asset_routes():
 
             conn = get_db()
             conn.execute("""
-                INSERT INTO assets (name, ip_address, asset_type, owner, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (name, ip_address, asset_type, owner, session["user_id"], datetime.now().isoformat()))
+                INSERT INTO assets
+                    (name, ip_address, asset_type, owner, criticality, internet_exposed, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (name, ip_address, asset_type, owner, criticality, internet_exposed, session["user_id"], datetime.now().isoformat()))
             conn.commit()
+            asset_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
             conn.close()
+            record_audit("ASSET_CREATED", "asset", asset_id, new_value=f"criticality={criticality};internet_exposed={internet_exposed}")
 
             flash("Ativo cadastrado com sucesso.", "success")
             return redirect(url_for("assets"))
@@ -66,8 +75,10 @@ def register_asset_routes():
     @admin_required
     def delete_asset(asset_id):
         conn = get_db()
+        asset = conn.execute("SELECT name FROM assets WHERE id = ?", (asset_id,)).fetchone()
         conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
         conn.commit()
         conn.close()
+        record_audit("ASSET_DELETED", "asset", asset_id, old_value=f"name={asset['name']}" if asset else None)
         flash("Ativo removido.", "info")
         return redirect(url_for("assets"))
