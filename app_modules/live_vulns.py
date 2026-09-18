@@ -32,6 +32,9 @@ def _fetch_live_vulnerabilities():
                         "description": item.get("shortDescription") or item.get("notes") or "Descrição não informada.",
                         "source": source_name,
                         "severity": "Alta" if item.get("knownRansomwareCampaignUse") == "Known" else "Média",
+                        "kev": True,
+                        "known_ransomware": item.get("knownRansomwareCampaignUse") == "Known",
+                        "due_date": item.get("dueDate"),
                         "link": f"https://www.cve.org/CVERecord?id={cve_id}" if cve_id else "#",
                     })
             else:
