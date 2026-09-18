@@ -31,6 +31,19 @@
                         <label class="form-label">Responsável</label>
                         <input type="text" name="owner" class="form-control" placeholder="Ex: Equipe de Infraestrutura">
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Criticidade do ativo</label>
+                        <select name="criticality" class="form-select">
+                            <option>Baixa</option>
+                            <option selected>Média</option>
+                            <option>Alta</option>
+                            <option>Crítica</option>
+                        </select>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="internet_exposed" id="internet_exposed">
+                        <label class="form-check-label" for="internet_exposed">Exposto à Internet</label>
+                    </div>
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <a href="{{ url_for('assets') }}" class="btn btn-outline-secondary">Cancelar</a>
                 </form>
