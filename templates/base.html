@@ -26,7 +26,10 @@
                         {{ session.get('role') }}
                     </span>
                 </span>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Sair</a>
+                <form method="POST" action="{{ url_for('logout') }}" class="d-inline">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-light btn-sm">Sair</button>
+                </form>
             </div>
         </div>
     </nav>

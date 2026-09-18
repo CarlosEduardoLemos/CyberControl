@@ -1,6 +1,6 @@
 from flask import flash, redirect, render_template, request, session, url_for
 
-from app_modules.core import app, get_db, admin_required
+from app_modules.core import VALID_ROLES, admin_required, app, get_db
 
 
 def register_user_routes():
@@ -8,15 +8,17 @@ def register_user_routes():
     @admin_required
     def users():
         conn = get_db()
-        all_users = conn.execute("SELECT * FROM users ORDER BY username").fetchall()
+        all_users = conn.execute(
+            "SELECT id, username, role FROM users ORDER BY username"
+        ).fetchall()
         conn.close()
         return render_template("users.html", users=all_users)
 
     @app.route("/users/<int:user_id>/role", methods=["POST"])
     @admin_required
     def change_role(user_id):
-        new_role = request.form["role"]
-        if new_role not in ("admin", "analista"):
+        new_role = request.form.get("role", "")
+        if new_role not in VALID_ROLES:
             flash("Perfil inválido.", "danger")
             return redirect(url_for("users"))
 
@@ -25,6 +27,12 @@ def register_user_routes():
             return redirect(url_for("users"))
 
         conn = get_db()
+        user_exists = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user_exists:
+            conn.close()
+            flash("Usuário não encontrado.", "danger")
+            return redirect(url_for("users"))
+
         conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
         conn.commit()
         conn.close()

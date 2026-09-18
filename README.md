@@ -1,33 +1,38 @@
 # CyberControl — Sistema de Gestão de Vulnerabilidades
 
-Aplicação web em Flask para cadastro de ativos, registro de vulnerabilidades, controle de permissões e monitoramento de risco. O sistema também consome vulnerabilidades públicas em tempo real de fontes como CISA KEV e NVD.
+Aplicação web em Flask para cadastro de ativos, registro de vulnerabilidades, controle de permissões e monitoramento de risco. O sistema também consome vulnerabilidades públicas de CISA KEV e NVD.
 
-O projeto é ideal para demonstração de um fluxo de segurança em TI com Flask, SQLite e uma interface administrativa leve.
+O projeto é voltado a demonstração e estudo de um fluxo de gestão de vulnerabilidades com Flask, SQLite e uma interface administrativa leve.
 
-## Visão geral
+## Funcionalidades
 
 - Cadastro e login de usuários
-- Perfis de acesso: `admin` e `analista`
+- Primeiro usuário criado como `admin`; usuários seguintes como `analista`
 - Gestão de ativos de TI
 - Registro de vulnerabilidades com score CVSS e cálculo automático de severidade
-- Dashboard com indicadores, vulnerabilidades públicas recentes e filtros avançados
-- Upload de evidências para vulnerabilidades
+- Dashboard e filtros
+- Consulta a CISA KEV e NVD
+- Upload e download protegido de evidências
 - Geração de relatório em PDF
+- Proteção CSRF nos formulários
+- Controle de acesso para operações administrativas
 
-## Tecnologias usadas
+## Tecnologias
 
-- Python 3
-- Flask
+- Python 3.10+
+- Flask 3.1.3
+- Werkzeug 3.1.6
 - SQLite
 - Bootstrap 5
 - ReportLab
-- Werkzeug
 
-## Estrutura do projeto
+## Estrutura
 
 ```text
-cybercontrol/
-├── cybercontrol.py
+CyberControl/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 ├── app_modules/
 │   ├── auth_routes.py
 │   ├── asset_routes.py
@@ -37,25 +42,53 @@ cybercontrol/
 │   ├── user_routes.py
 │   └── vuln_routes.py
 ├── templates/
-├── static/
 ├── tests/
+├── cybercontrol.py
 ├── requirements.txt
-└── database.db
+└── README.md
 ```
 
-## Requisitos
-
-- Python 3.10 ou superior
-- pip
+`database.db` e `uploads/` são criados em runtime e não devem ser versionados.
 
 ## Instalação
 
-```bash
-cd c:\Users\User\Documents\cybercontrol
+### Windows PowerShell
+
+```powershell
+git clone https://github.com/CarlosEduardoLemos/CyberControl.git
+cd CyberControl
 python -m venv venv
-venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
+
+### Linux/macOS
+
+```bash
+git clone https://github.com/CarlosEduardoLemos/CyberControl.git
+cd CyberControl
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Configuração
+
+Defina uma chave de sessão forte antes de executar a aplicação. Ela não deve ser commitada.
+
+PowerShell:
+
+```powershell
+$env:SECRET_KEY = python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Bash:
+
+```bash
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+```
+
+Se `SECRET_KEY` não estiver definida, uma chave aleatória é criada para o processo atual. Isso é útil apenas em desenvolvimento porque sessões existentes deixam de ser válidas após reiniciar a aplicação.
 
 ## Execução
 
@@ -63,43 +96,58 @@ pip install -r requirements.txt
 python cybercontrol.py
 ```
 
-A aplicação ficará disponível em:
+A aplicação fica disponível em:
 
+```text
 http://127.0.0.1:5000
+```
 
-Na primeira execução, o projeto cria automaticamente o banco de dados SQLite e a pasta `uploads` para armazenar evidências.
+O modo debug fica desativado por padrão. Para desenvolvimento local:
 
-## Uso básico
+PowerShell:
 
-1. Acesse o endereço local na barra de endereços do navegador
-2. Cadastre um usuário
-3. Faça login
-4. Cadastre seus ativos
-5. Registre vulnerabilidades para ativos existentes
-6. Utilize o dashboard para filtrar e acompanhar métricas
+```powershell
+$env:FLASK_DEBUG = "1"
+python cybercontrol.py
+```
+
+Não exponha o servidor de desenvolvimento do Flask diretamente em produção.
+
+## Upload de evidências
+
+- Evidências são armazenadas em `uploads/<vulnerability_id>/`.
+- Nomes são sanitizados antes de serem gravados.
+- Downloads usam resolução segura dentro da pasta da vulnerabilidade.
+- O limite total da requisição é 10 MB.
+- `uploads/` está no `.gitignore`.
 
 ## Testes
 
 ```bash
-python -m unittest discover tests
+python -m unittest discover -v tests
 ```
+
+Os testes cobrem, entre outros pontos:
+
+- importação/carregamento básico;
+- filtros e resumo de vulnerabilidades públicas;
+- regressão do cache de consultas externas;
+- proteção CSRF;
+- criação do primeiro administrador;
+- traversal no download de evidências;
+- validação de status.
+
+## CI
+
+O workflow `.github/workflows/ci.yml` executa compilação e testes em Python 3.10, 3.11 e 3.12.
 
 ## Modelo de dados
 
-- `users` — usuários do sistema
-- `assets` — ativos de TI
-- `vulnerabilities` — registros de vulnerabilidades vinculados a ativos
+- `users` — usuários
+- `assets` — ativos
+- `vulnerabilities` — vulnerabilidades vinculadas aos ativos
 
-Estrutura mínima:
-
-```text
-users           (id, username, password_hash, role)
-assets          (id, name, ip_address, asset_type, owner, created_by, created_at)
-vulnerabilities (id, asset_id, title, description, cvss_score, severity, status,
-                 discovered_date, resolved_date, created_by, created_at)
-```
-
-## Escala de severidade
+## Escala de severidade local
 
 | Score CVSS | Severidade |
 |---|---|
@@ -109,19 +157,9 @@ vulnerabilities (id, asset_id, title, description, cvss_score, severity, status,
 | 7.0 – 8.9 | Alta |
 | 9.0 – 10.0 | Crítica |
 
-## Observações
+## Limitações
 
-- A importação de vulnerabilidades públicas depende de serviços externos (CISA KEV e NVD).
-- Se uma fonte externa estiver indisponível, o sistema continua funcionando com os dados locais.
-- O armazenamento de evidências é feito localmente na pasta `uploads`.
-- O banco SQLite atende a cenários de uso leve e demonstração.
-
-## Melhoria contínua
-
-- Adicionar proteção CSRF nos formulários
-- Implementar logs de auditoria de ações
-- Permitir múltiplos anexos por vulnerabilidade
-- Adicionar notificações por e-mail para casos críticos
-- Ampliar as fontes de inteligência de vulnerabilidades
-- Cobrir o projeto com mais testes automatizados
-- Preparar deploy em ambiente de produção
+- SQLite é adequado a uso leve e demonstração.
+- CISA KEV e NVD são serviços externos; indisponibilidade dessas fontes não deve impedir o uso dos dados locais.
+- A classificação exibida para registros externos é uma simplificação de apresentação e não substitui análise de risco contextual.
+- Para produção, ainda é recomendável usar um servidor WSGI apropriado, HTTPS, rate limiting, logs de auditoria e banco gerenciado conforme a escala.

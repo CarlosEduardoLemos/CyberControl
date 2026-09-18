@@ -5,43 +5,28 @@
     <h3 class="mb-0">Ativos</h3>
     <a href="{{ url_for('add_asset') }}" class="btn btn-primary">+ Novo ativo</a>
 </div>
-
 {% if not assets %}
 <p class="text-muted">Nenhum ativo cadastrado ainda.</p>
 {% else %}
-<div class="card shadow-sm">
-    <div class="card-body">
-        <table class="table table-hover align-middle">
-            <thead>
-                <tr>
-                    <th>Nome</th>
-                    <th>Tipo</th>
-                    <th>IP</th>
-                    <th>Responsável</th>
-                    <th>Vulnerabilidades</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for a in assets %}
-                <tr>
-                    <td><a href="{{ url_for('asset_detail', asset_id=a['id']) }}">{{ a['name'] }}</a></td>
-                    <td>{{ a['asset_type'] }}</td>
-                    <td>{{ a['ip_address'] or '-' }}</td>
-                    <td>{{ a['owner'] or '-' }}</td>
-                    <td><span class="badge bg-secondary">{{ a['vuln_count'] }}</span></td>
-                    <td class="text-end">
-                        {% if session.get('role') == 'admin' %}
-                        <form method="POST" action="{{ url_for('delete_asset', asset_id=a['id']) }}" class="d-inline" onsubmit="return confirm('Remover este ativo e todas as vulnerabilidades associadas?');">
-                            <button type="submit" class="btn btn-sm btn-outline-danger">Excluir</button>
-                        </form>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
+<div class="card shadow-sm"><div class="card-body">
+<table class="table table-hover align-middle">
+<thead><tr><th>Nome</th><th>Tipo</th><th>IP</th><th>Responsável</th><th>Vulnerabilidades</th><th></th></tr></thead>
+<tbody>
+{% for a in assets %}
+<tr>
+<td><a href="{{ url_for('asset_detail', asset_id=a['id']) }}">{{ a['name'] }}</a></td>
+<td>{{ a['asset_type'] }}</td><td>{{ a['ip_address'] or '-' }}</td><td>{{ a['owner'] or '-' }}</td>
+<td><span class="badge bg-secondary">{{ a['vuln_count'] }}</span></td>
+<td class="text-end">
+{% if session.get('role') == 'admin' %}
+<form method="POST" action="{{ url_for('delete_asset', asset_id=a['id']) }}" class="d-inline" onsubmit="return confirm('Remover este ativo e todas as vulnerabilidades associadas?');">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+<button type="submit" class="btn btn-sm btn-outline-danger">Excluir</button>
+</form>
+{% endif %}
+</td>
+</tr>
+{% endfor %}
+</tbody></table></div></div>
 {% endif %}
 {% endblock %}

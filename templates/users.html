@@ -2,41 +2,16 @@
 {% block title %}Usuários{% endblock %}
 {% block content %}
 <h3 class="mb-3">Usuários</h3>
-
-<div class="card shadow-sm">
-    <div class="card-body">
-        <table class="table table-hover align-middle">
-            <thead>
-                <tr>
-                    <th>Usuário</th>
-                    <th>Perfil</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for u in users %}
-                <tr>
-                    <td>{{ u['username'] }}</td>
-                    <td>
-                        <span class="badge {% if u['role'] == 'admin' %}bg-danger{% else %}bg-secondary{% endif %}">
-                            {{ u['role'] }}
-                        </span>
-                    </td>
-                    <td class="text-end">
-                        <form method="POST" action="{{ url_for('change_role', user_id=u['id']) }}" class="d-inline">
-                            {% if u['role'] == 'admin' %}
-                            <input type="hidden" name="role" value="analista">
-                            <button type="submit" class="btn btn-sm btn-outline-secondary">Tornar Analista</button>
-                            {% else %}
-                            <input type="hidden" name="role" value="admin">
-                            <button type="submit" class="btn btn-sm btn-outline-danger">Tornar Admin</button>
-                            {% endif %}
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
+<div class="card shadow-sm"><div class="card-body"><table class="table table-hover align-middle">
+<thead><tr><th>Usuário</th><th>Perfil</th><th></th></tr></thead><tbody>
+{% for u in users %}<tr><td>{{ u['username'] }}</td>
+<td><span class="badge {% if u['role'] == 'admin' %}bg-danger{% else %}bg-secondary{% endif %}">{{ u['role'] }}</span></td>
+<td class="text-end"><form method="POST" action="{{ url_for('change_role', user_id=u['id']) }}" class="d-inline">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+{% if u['role'] == 'admin' %}<input type="hidden" name="role" value="analista">
+<button type="submit" class="btn btn-sm btn-outline-secondary">Tornar Analista</button>
+{% else %}<input type="hidden" name="role" value="admin">
+<button type="submit" class="btn btn-sm btn-outline-danger">Tornar Admin</button>{% endif %}
+</form></td></tr>{% endfor %}
+</tbody></table></div></div>
 {% endblock %}

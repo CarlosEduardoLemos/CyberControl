@@ -1,3 +1,5 @@
+import os
+
 from app_modules.auth_routes import register_auth_routes
 from app_modules.asset_routes import register_asset_routes
 from app_modules.core import app, init_db
@@ -26,4 +28,5 @@ create_app()
 if __name__ == "__main__":
     init_db()
     refresh_live_vulnerabilities(force=True)
-    app.run(debug=True)
+    debug_enabled = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes", "on"}
+    app.run(debug=debug_enabled)

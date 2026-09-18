@@ -1,15 +1,15 @@
 from flask import flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app_modules.core import app, get_db, login_required
+from app_modules.core import app, get_db
 
 
 def register_auth_routes():
     @app.route("/register", methods=["GET", "POST"])
     def register():
         if request.method == "POST":
-            username = request.form["username"].strip()
-            password = request.form["password"]
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
 
             if not username or not password:
                 flash("Preencha usuário e senha.", "danger")
@@ -21,25 +21,26 @@ def register_auth_routes():
             ).fetchone()
 
             if existing:
-                flash("Esse usuário já existe.", "danger")
                 conn.close()
+                flash("Esse usuário já existe.", "danger")
                 return redirect(url_for("register"))
 
             total_users = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
             role = "admin" if total_users == 0 else "analista"
 
-            password_hash = generate_password_hash(password)
             conn.execute(
                 "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-                (username, password_hash, role),
+                (username, generate_password_hash(password), role),
             )
             conn.commit()
             conn.close()
 
-            if role == "admin":
-                flash("Conta criada como Administrador (primeiro usuário do sistema). Faça login.", "success")
-            else:
-                flash("Conta criada com sucesso! Faça login.", "success")
+            message = (
+                "Conta criada como Administrador (primeiro usuário do sistema). Faça login."
+                if role == "admin"
+                else "Conta criada com sucesso! Faça login."
+            )
+            flash(message, "success")
             return redirect(url_for("login"))
 
         return render_template("register.html")
@@ -47,16 +48,21 @@ def register_auth_routes():
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
-            username = request.form["username"].strip()
-            password = request.form["password"]
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
 
             conn = get_db()
             user = conn.execute(
-                "SELECT * FROM users WHERE username = ?", (username,)
+                "SELECT id, username, password_hash, role FROM users WHERE username = ?",
+                (username,),
             ).fetchone()
             conn.close()
 
             if user and check_password_hash(user["password_hash"], password):
+                csrf_token = session.get("_csrf_token")
+                session.clear()
+                if csrf_token:
+                    session["_csrf_token"] = csrf_token
                 session["user_id"] = user["id"]
                 session["username"] = user["username"]
                 session["role"] = user["role"]
@@ -67,7 +73,7 @@ def register_auth_routes():
 
         return render_template("login.html")
 
-    @app.route("/logout")
+    @app.route("/logout", methods=["POST"])
     def logout():
         session.clear()
         flash("Você saiu da sua conta.", "info")

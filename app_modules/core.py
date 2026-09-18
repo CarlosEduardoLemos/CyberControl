@@ -1,15 +1,28 @@
+import hmac
 import os
+import secrets
 import sqlite3
 from functools import wraps
 
-from flask import Flask, flash, redirect, session, url_for
+from flask import Flask, abort, flash, redirect, request, session, url_for
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"), static_folder=os.path.join(BASE_DIR, "static"))
-app.secret_key = "troque-esta-chave-por-uma-secreta-e-aleatoria"
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static"),
+)
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    UPLOAD_FOLDER=UPLOAD_FOLDER,
+    MAX_CONTENT_LENGTH=10 * 1024 * 1024,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
+
 DB_PATH = os.path.join(BASE_DIR, "database.db")
 
 
@@ -89,8 +102,32 @@ STATUS_BADGE = {
     "Em andamento": "bg-warning text-dark",
     "Resolvida": "bg-success",
 }
+VALID_STATUSES = frozenset(STATUS_BADGE)
+VALID_ROLES = frozenset({"admin", "analista"})
 
 app.jinja_env.globals.update(SEVERITY_BADGE=SEVERITY_BADGE, STATUS_BADGE=STATUS_BADGE)
+
+
+def get_csrf_token():
+    token = session.get("_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+
+app.jinja_env.globals["csrf_token"] = get_csrf_token
+
+
+@app.before_request
+def csrf_protect():
+    if request.method != "POST":
+        return
+
+    expected = session.get("_csrf_token")
+    supplied = request.form.get("_csrf_token", "")
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        abort(400, description="Token CSRF inválido ou ausente.")
 
 
 def login_required(f):

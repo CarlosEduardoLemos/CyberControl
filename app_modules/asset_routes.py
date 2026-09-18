@@ -2,7 +2,7 @@ from datetime import datetime
 
 from flask import flash, redirect, render_template, request, session, url_for
 
-from app_modules.core import app, get_db, login_required, admin_required
+from app_modules.core import admin_required, app, get_db, login_required
 
 
 def register_asset_routes():
@@ -23,9 +23,9 @@ def register_asset_routes():
     @login_required
     def add_asset():
         if request.method == "POST":
-            name = request.form["name"].strip()
+            name = request.form.get("name", "").strip()
             ip_address = request.form.get("ip_address", "").strip()
-            asset_type = request.form.get("asset_type", "Servidor")
+            asset_type = request.form.get("asset_type", "Servidor").strip()
             owner = request.form.get("owner", "").strip()
 
             if not name:

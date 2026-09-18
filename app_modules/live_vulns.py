@@ -6,16 +6,10 @@ from datetime import datetime
 LIVE_VULNS_CACHE = []
 LIVE_VULNS_ERROR = None
 LIVE_VULNS_FETCHED_AT = None
+CACHE_TTL_SECONDS = 1800
 
 
-def refresh_live_vulnerabilities(force=False, limit=8, search_term="", source_filter="", severity_filter=""):
-    global LIVE_VULNS_CACHE, LIVE_VULNS_ERROR, LIVE_VULNS_FETCHED_AT
-
-    if not force and LIVE_VULNS_CACHE and LIVE_VULNS_FETCHED_AT:
-        age_seconds = (datetime.now() - LIVE_VULNS_FETCHED_AT).total_seconds()
-        if age_seconds < 1800:
-            return LIVE_VULNS_CACHE, LIVE_VULNS_ERROR
-
+def _fetch_live_vulnerabilities():
     records = []
     errors = []
     sources = [
@@ -25,7 +19,7 @@ def refresh_live_vulnerabilities(force=False, limit=8, search_term="", source_fi
 
     for source_name, source_url in sources:
         try:
-            req = urllib.request.Request(source_url, headers={"User-Agent": "Mozilla/5.0"})
+            req = urllib.request.Request(source_url, headers={"User-Agent": "CyberControl/1.0"})
             with urllib.request.urlopen(req, timeout=15) as response:
                 payload = json.loads(response.read().decode("utf-8"))
 
@@ -37,7 +31,7 @@ def refresh_live_vulnerabilities(force=False, limit=8, search_term="", source_fi
                         "title": item.get("vulnerabilityName") or cve_id or "Vulnerabilidade conhecida",
                         "description": item.get("shortDescription") or item.get("notes") or "Descrição não informada.",
                         "source": source_name,
-                        "severity": "Alta" if item.get("knownRansomwareCampaignUse") else "Média",
+                        "severity": "Alta" if item.get("knownRansomwareCampaignUse") == "Known" else "Média",
                         "link": f"https://www.cve.org/CVERecord?id={cve_id}" if cve_id else "#",
                     })
             else:
@@ -45,7 +39,10 @@ def refresh_live_vulnerabilities(force=False, limit=8, search_term="", source_fi
                     cve = item.get("cve", {})
                     cve_id = cve.get("id") or ""
                     descriptions = cve.get("descriptions", []) or []
-                    description = descriptions[0].get("value", "") if descriptions else "Descrição não informada."
+                    english = next((d for d in descriptions if d.get("lang") == "en"), None)
+                    description = (english or (descriptions[0] if descriptions else {})).get(
+                        "value", "Descrição não informada."
+                    )
                     records.append({
                         "id": cve_id,
                         "title": cve_id or "Vulnerabilidade recente",
@@ -63,31 +60,45 @@ def refresh_live_vulnerabilities(force=False, limit=8, search_term="", source_fi
         if item["id"] and item["id"] in seen_ids:
             continue
         unique_records.append(item)
-        seen_ids.add(item["id"])
+        if item["id"]:
+            seen_ids.add(item["id"])
+
+    return unique_records, "; ".join(errors) if errors else None
+
+
+def refresh_live_vulnerabilities(force=False, limit=8, search_term="", source_filter="", severity_filter=""):
+    global LIVE_VULNS_CACHE, LIVE_VULNS_ERROR, LIVE_VULNS_FETCHED_AT
+
+    cache_is_fresh = False
+    if LIVE_VULNS_FETCHED_AT:
+        age_seconds = (datetime.now() - LIVE_VULNS_FETCHED_AT).total_seconds()
+        cache_is_fresh = age_seconds < CACHE_TTL_SECONDS
+
+    if force or not cache_is_fresh:
+        LIVE_VULNS_CACHE, LIVE_VULNS_ERROR = _fetch_live_vulnerabilities()
+        LIVE_VULNS_FETCHED_AT = datetime.now()
+
+    records = list(LIVE_VULNS_CACHE)
 
     if search_term:
         term = search_term.strip().lower()
-        filtered = [
-            item for item in unique_records
+        records = [
+            item for item in records
             if term in (item.get("title") or "").lower()
             or term in (item.get("description") or "").lower()
             or term in (item.get("source") or "").lower()
         ]
-        unique_records = filtered
 
     if source_filter:
-        unique_records = [
-            item for item in unique_records
+        records = [
+            item for item in records
             if (item.get("source") or "").lower() == source_filter.lower()
         ]
 
     if severity_filter:
-        unique_records = filter_live_vulnerabilities(unique_records, severity_filter=severity_filter)
+        records = filter_live_vulnerabilities(records, severity_filter=severity_filter)
 
-    LIVE_VULNS_CACHE = unique_records[:limit]
-    LIVE_VULNS_ERROR = "; ".join(errors) if errors else None
-    LIVE_VULNS_FETCHED_AT = datetime.now()
-    return LIVE_VULNS_CACHE, LIVE_VULNS_ERROR
+    return records[:limit], LIVE_VULNS_ERROR
 
 
 def filter_live_vulnerabilities(items, severity_filter=""):
@@ -102,11 +113,7 @@ def filter_live_vulnerabilities(items, severity_filter=""):
 
 
 def summarize_live_vulnerabilities(items):
-    summary = {
-        "total": len(items),
-        "by_source": {},
-        "by_severity": {},
-    }
+    summary = {"total": len(items), "by_source": {}, "by_severity": {}}
 
     for item in items:
         source = item.get("source", "Outros")
